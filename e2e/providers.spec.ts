@@ -21,7 +21,7 @@ const FAKE_CLI = join(process.cwd(), 'tests', 'fake-agent', 'cli.mjs');
 const TEST_KEY = 'sk-e2e-provider-test-key-0001';
 
 /** Node ABI 的 better-sqlite3 副本（vitest alias 同源；e2e 跑在 Node 上） */
-const nodeRequire = createRequire(import.meta.url);
+const nodeRequire = createRequire(join(process.cwd(), 'e2e', 'providers.spec.ts'));
 const Database = nodeRequire(
   join(process.cwd(), 'node_modules', 'better-sqlite3-node', 'lib', 'index.js'),
 ) as typeof import('better-sqlite3');
@@ -85,39 +85,39 @@ test('① 添加预设 provider：safeStorage 加密落盘，DB 无明文；模�
     await expect(table).toContainText('$0.28'); // 输入价 / 1M（快照）
 
     // DB 断言：加密落盘、明文不出现在任何列
+    let rows: Record<string, unknown>[] | null = null;
     await expect
       .poll(
         () => {
           const dbFile = join(dataDir, 'open-cowork.db');
-          if (!existsSync(dbFile)) return null;
+          if (!existsSync(dbFile)) return 0;
           const db = new Database(dbFile, { readonly: true });
           try {
-            return db.prepare('SELECT * FROM providers').all() as Record<string, unknown>[];
+            rows = db.prepare('SELECT * FROM providers').all() as Record<string, unknown>[];
+            return rows.length;
           } finally {
             db.close();
           }
         },
         { timeout: 10_000 },
       )
-      .toSatisfy((rows: Record<string, unknown>[] | null) => {
-        if (!rows || rows.length !== 1) return false;
-        const row = rows[0];
-        if (row.name !== 'DeepSeek' || row.kind !== 'preset' || row.preset_id !== 'deepseek') {
-          return false;
-        }
-        if (row.protocol !== 'anthropic' || row.base_url !== 'https://api.deepseek.com/anthropic') {
-          return false;
-        }
-        const cipher = row.encrypted_api_key;
-        if (typeof cipher !== 'string' || cipher.length === 0) return false; // safeStorage 已加密
-        // 明文（及其片段）不出现在行的任何文本列
-        for (const value of Object.values(row)) {
-          if (typeof value === 'string' && (value.includes(TEST_KEY) || value.includes('sk-e2e'))) {
-            return false;
-          }
-        }
-        return true;
-      });
+      .toBe(1);
+    const row = rows![0];
+    expect(row.name).toBe('DeepSeek');
+    expect(row.kind).toBe('preset');
+    expect(row.preset_id).toBe('deepseek');
+    expect(row.protocol).toBe('anthropic');
+    expect(row.base_url).toBe('https://api.deepseek.com/anthropic');
+    // safeStorage 密文非空且为 base64；明文（及其片段）不出现在行的任何文本列
+    expect(typeof row.encrypted_api_key).toBe('string');
+    expect((row.encrypted_api_key as string).length).toBeGreaterThan(0);
+    expect(row.encrypted_api_key as string).toMatch(/^[A-Za-z0-9+/=]+$/);
+    for (const value of Object.values(row)) {
+      if (typeof value === 'string') {
+        expect(value).not.toContain(TEST_KEY);
+        expect(value).not.toContain('sk-e2e');
+      }
+    }
   } finally {
     await app.close();
   }
