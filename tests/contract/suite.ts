@@ -166,6 +166,61 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
       expect(usage.usage.outputTokens).toBe(22);
     });
 
+    // ── ticket #27：用量归一断言（共享套件——每家 driver 入组即被本用例覆盖）──
+
+    it('用量归一：usage 事件字段齐全且数值正确，且先于 turn_end 到达', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '干活' } },
+        {
+          action: 'emit',
+          event: {
+            kind: 'turn_end',
+            status: 'completed',
+            usage: {
+              inputTokens: 1200,
+              outputTokens: 340,
+              cacheReadTokens: 800,
+              cacheWriteTokens: 50,
+              model: 'fake-model-1',
+            },
+          },
+        },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed');
+
+      const usages = collected.byType('usage');
+      expect(usages).toHaveLength(1);
+      const u = usages[0].usage;
+      expect(u.inputTokens).toBe(1200);
+      expect(u.outputTokens).toBe(340);
+      expect(u.cacheReadTokens).toBe(800);
+      expect(u.cacheWriteTokens).toBe(50);
+      expect(u.model).toBe('fake-model-1');
+
+      // 结算顺序约定：usage 先于 turn_end（main 侧先落用量再迁移任务状态）
+      const types = collected.events.map((e) => e.type);
+      expect(types.indexOf('usage')).toBeGreaterThan(-1);
+      expect(types.indexOf('usage')).toBeLessThan(types.lastIndexOf('turn_end'));
+    });
+
+    it('用量归一：turn_end 缺 usage 载荷时仍归一出零值 usage（口径不缺失）', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '无用量一轮' } },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed');
+      const usage = collected.byType('usage')[0];
+      expect(usage).toBeTruthy();
+      expect(typeof usage.usage.inputTokens).toBe('number');
+      expect(typeof usage.usage.outputTokens).toBe('number');
+    });
+
     it('事件归一：permission_request → handler → permission_response（allow 与 deny）', async () => {
       for (const decision of [
         { behavior: 'allow' } as PermissionDecision,

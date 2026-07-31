@@ -1,0 +1,47 @@
+/*
+ * ticket #27：用量与 context 水位样式。
+ * 设计宪法对照：灰阶小字（--ink-2 / 12-13px，§3 UI 辅文层级）；零阴影；
+ * 语义色仅警告橙（§2 白名单）；无动效（§5 三类之外不引入）。
+ */
+
+/* ── 侧栏任务项：用量汇总 chip（第三行灰字，与 .task-meta 同层级） ── */
+.task-usage {
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 文档流：每轮末尾用量灰字（比正文低两级，不抢文档主角） ── */
+.turn-usage {
+  margin: 2px 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+/* live 条目（折算未回写）与普通灰字同形——无闪烁差分（§5 不动效） */
+.turn-usage[data-pending='true'] {
+  color: var(--ink-3);
+}
+
+/* ── 输入区：context 水位环（chips 行末尾右置） ── */
+.context-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto; /* chips 行内右置，与档位 chip 分组 */
+}
+.context-ring-track {
+  stroke: var(--border);
+}
+.context-ring-value {
+  stroke: var(--ink-3);
+}
+.context-ring.warn .context-ring-value {
+  stroke: var(--warning);
+}
+.context-ring-hint {
+  font-size: 12px;
+  color: var(--warning);
+}
