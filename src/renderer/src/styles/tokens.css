@@ -1,0 +1,65 @@
+/*
+ * 设计 token（DESIGN.md §2 直采：浅色=github / 深色=night）。
+ * 一切 UI 颜色只允许引用本文件的 CSS 自定义属性，禁止硬编码色值（§6/§7）。
+ * 明暗主题经 <html data-theme="light|dark"> 切换，瞬间切换、无过渡动画（§6）。
+ */
+
+:root {
+  /* 圆角三档（§3），第四种圆角为禁区 */
+  --radius-1: 8px;
+  --radius-2: 12px;
+  --radius-pill: 9999px;
+
+  /* 字体（§3） */
+  --font-body: "Open Sans", "Clear Sans", "Helvetica Neue", Helvetica, Arial, "PingFang SC", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-size-body: 16px;
+  --font-size-ui: 13px;
+  --line-height-body: 1.6;
+
+  /* 布局（§1） */
+  --sidebar-w: 240px;
+  --inspector-w: 320px;
+  --content-max: 860px;
+}
+
+:root,
+:root[data-theme="light"] {
+  /* 浅色 = Typora github 主题（§2） */
+  --bg: #ffffff;
+  --bg-soft: #fafafa;
+  --ink: #333333;
+  --ink-2: #777777;
+  --accent: #4183C4;
+
+  /* 语义色白名单（§2） */
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  /* 派生 token：由白名单色 color-mix 得出，不引入新色值。
+     --border 用于「用边框而非阴影分层」（§3 零阴影）；
+     --ink-3 仅代码块语法高亮第三色用（§4） */
+  --border: color-mix(in srgb, var(--ink) 14%, transparent);
+  --ink-3: color-mix(in srgb, var(--ink) 48%, var(--bg));
+  --selection: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+:root[data-theme="dark"] {
+  /* 深色 = Typora night 主题（§2） */
+  --bg: #363B40;
+  --bg-soft: #2E3033;
+  --ink: #b8bfc6;
+  --accent: #6dc1e7;
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+
+  /* §2 深色表未定义 --ink-2，由 --ink 向 --bg 派生（不引入新色值） */
+  --ink-2: color-mix(in srgb, var(--ink) 62%, var(--bg));
+  --border: color-mix(in srgb, var(--ink) 18%, transparent);
+  --ink-3: color-mix(in srgb, var(--ink) 48%, var(--bg));
+  /* 深色文本选中色为 §2 指定值 */
+  --selection: #4a89dc;
+}

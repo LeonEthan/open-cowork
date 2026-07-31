@@ -1,0 +1,214 @@
+/*
+ * 三栏骨架（DESIGN.md §1）：任务侧栏 240px ｜ 文档流 max-860px 居中 ｜ 检查栏 320px。
+ * 左右栏可折叠；折叠动效为 slide ≤220ms ease（§5 允许的唯三类动效之一）。
+ * 分层一律用 1px 边框，零阴影（§3/§7）。
+ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ── 顶栏 ─────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-ui);
+  color: var(--ink-2);
+  flex: none;
+  -webkit-app-region: drag;
+}
+.topbar button {
+  -webkit-app-region: no-drag;
+}
+.topbar .brand {
+  font-weight: 650;
+  color: var(--ink);
+}
+.topbar .spacer {
+  flex: 1;
+}
+.topbar .utility-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  color: var(--ink-2);
+  font-size: var(--font-size-ui);
+}
+.icon-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── 三栏容器 ──────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 任务侧栏（240px，可折叠：负 margin 实现 slide） */
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+  border-right: 1px solid var(--border);
+  transition: margin-left 200ms ease;
+}
+.sidebar.collapsed {
+  margin-left: calc(-1 * var(--sidebar-w));
+}
+.sidebar .pane-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.sidebar .pane-footer {
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.pane-title {
+  margin: 0 0 8px;
+  font-size: var(--font-size-ui);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* 文档流（主角，内容栏 max-width 860px 居中，水平留白 ≥30px，底部留白 ≥100px，§3） */
+.content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.content-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 32px 30px 120px;
+}
+.doc-title {
+  margin: 0 0 16px;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.muted {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* 检查栏（320px，可折叠） */
+.inspector {
+  width: var(--inspector-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-soft);
+  border-left: 1px solid var(--border);
+  transition: margin-right 200ms ease;
+}
+.inspector.collapsed {
+  margin-right: calc(-1 * var(--inspector-w));
+}
+.inspector-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.inspector-tab {
+  padding: 6px 10px;
+  font-size: var(--font-size-ui);
+  color: var(--ink-2);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-1) var(--radius-1) 0 0;
+}
+.inspector-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--bg);
+  border-color: var(--border);
+}
+.inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* 空状态占位（克制：仅文字，无插画/渐变/徽章，§7） */
+.empty-state {
+  padding: 16px 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* 设置页区块 */
+.settings-section {
+  margin-bottom: 24px;
+}
+.settings-section .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.settings-section label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.settings-section input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* 任务侧栏项骨架（§1：状态点 + 标题 + 元信息；状态点 pulse 1.2–1.6s 为 §5 允许动效） */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-3);
+}
+.status-dot.running {
+  background: var(--accent);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
