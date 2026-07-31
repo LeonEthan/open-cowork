@@ -10,3 +10,6 @@ test-results/
 .DS_Store
 # 本地数据目录（默认在 ~/.open-cowork/；若有人用 OPEN_COWORK_DATA_DIR 指进仓库也别提交）
 .open-cowork/
+
+# worktree 内 node_modules 为符号链接（尾部斜杠模式只匹配目录，漏匹配链接）
+/node_modules
