@@ -4,6 +4,8 @@
  */
 // ticket #18：DTO 复用十实体类型（entities.ts 为纯类型文件，type-only import 无运行时依赖）
 import type { Message, Task, TaskStatus, ToolCall, Turn, Workspace } from '../main/db/entities';
+// ticket #20（additive 独立行，避免与他票改同一 import）：审批托盘重连基线的 Approval 实体
+import type { Approval } from '../main/db/entities';
 
 export interface OpenCoworkApi {
   /** 请求建立 renderer ⇄ utility 的 MessageChannel 直连；port 经 window 'message' 事件送达 */
@@ -84,6 +86,8 @@ export interface TaskHistory {
   turns: Turn[];
   messages: Message[];
   toolCalls: ToolCall[];
+  /** ticket #20（additive）：仍 pending 的审批行——重连/重启后恢复审批托盘的渲染基线 */
+  approvals: Approval[];
 }
 
 export interface AgentApi {

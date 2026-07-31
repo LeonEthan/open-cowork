@@ -144,6 +144,18 @@ export const useConversationStore = create<ConversationState>()((set, get) => {
         }
       }
       const runningTurn = history.turns.some((t) => t.status === 'running');
+      // ticket #20：仍 pending 的审批行补到时间线尾部——重连/重启后审批托盘的渲染基线
+      // （已决议的审批不进历史呈现；request_json 即 PermissionRequestPayload 原样快照）
+      for (const a of history.approvals ?? []) {
+        try {
+          const request = JSON.parse(a.request_json) as PermissionRequestPayload;
+          if (request && typeof request.id === 'string') {
+            items.push({ kind: 'permission', request, decision: null });
+          }
+        } catch {
+          // 坏行跳过（不阻塞整段历史渲染）
+        }
+      }
       set((s) => ({
         byTask: {
           ...s.byTask,
