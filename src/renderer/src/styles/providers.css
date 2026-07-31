@@ -161,7 +161,3 @@
 .provider-models tr:last-child td {
   border-bottom: none;
 }
-
-.mono {
-  font-family: var(--font-mono);
-}
