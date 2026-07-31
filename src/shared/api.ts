@@ -36,6 +36,10 @@ export interface OpenCoworkApi {
   onPtyData: (key: string, cb: (data: string) => void) => () => void;
   onPtyExit: (key: string, cb: (exitCode: number) => void) => () => void;
   // ── ticket #28 end ────────────────────────────────────────────────────
+
+  // ── ticket #22：agent 探测（picker 数据源；#26 完整卡片） ─────────────
+  agents: AgentDetectApi;
+  // ── ticket #22 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -92,3 +96,28 @@ export interface AgentApi {
   /** 历史重拉（turns + messages + toolCalls，按 seq/idx 升序） */
   history: (taskId: string) => Promise<TaskHistory>;
 }
+
+// ── ticket #22：agent 探测（picker 数据源；#26 完整卡片） ─────────────
+
+/** 单家 agent 的探测结果（main services/agentDetect.ts 产出） */
+export interface DetectedAgent {
+  /** 'claude-code' | 'codex' | 'opencode' | 'pi'（与 task.agent_type 对应） */
+  id: string;
+  displayName: string;
+  /** 可执行名（PATH 探测目标） */
+  executable: string;
+  /** 已安装（env 覆盖命中或 PATH 探测命中） */
+  installed: boolean;
+  /** 探测到的可执行路径（env 覆盖优先）；未安装为 null */
+  resolvedPath: string | null;
+  /** driver 是否已接入（pi 属 #23，未接入前 picker 标「即将支持」） */
+  driverAvailable: boolean;
+}
+
+export interface AgentDetectApi {
+  /** 探测结果（main 侧带缓存，首调实测） */
+  list: () => Promise<DetectedAgent[]>;
+  /** 强制重测（手动刷新） */
+  refresh: () => Promise<DetectedAgent[]>;
+}
+// ── ticket #22 end ────────────────────────────────────────────────────

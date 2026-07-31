@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AGENT_OPTIONS, STATUS_LABELS, agentLabel, statusDotClass } from '../../lib/taskStatus';
+import { STATUS_LABELS, agentLabel, statusDotClass } from '../../lib/taskStatus';
+import { AgentPicker } from '../../components/pickers/AgentPicker';
 import { useAppStore } from '../../stores/appStore';
 import { useDataStore } from '../../stores/data';
 import type { SidebarSectionDef } from '../registry';
@@ -7,7 +8,8 @@ import type { SidebarSectionDef } from '../registry';
 /**
  * 内置「任务」侧栏区块（ticket #18 实装，DESIGN.md §1）：
  * 任务项 = 状态点（六态，语义 token；仅 running pulse）+ 标题 + 元信息。
- * 顶部「新建任务」表单：需求描述 textarea + agent/provider/model 占位 picker。
+ * 顶部「新建任务」表单：需求描述 textarea + agent/provider/model picker
+ * （agent picker 已实装探测置灰，ticket #22；provider/model 占位待 #21/#26）。
  */
 
 // ── 静态占位 picker 数据：真实 provider/model 目录由 #19/#21/#26 注水替换 ──
@@ -21,7 +23,7 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
 
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? '');
   const [prompt, setPrompt] = useState('');
-  const [agentType, setAgentType] = useState(AGENT_OPTIONS[0].value);
+  const [agentType, setAgentType] = useState('');
   const [providerId, setProviderId] = useState('');
   const [model, setModel] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +35,8 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
     }
   }, [workspaces, workspaceId]);
 
-  const canSubmit = workspaceId.length > 0 && prompt.trim().length > 0 && !submitting;
+  const canSubmit =
+    workspaceId.length > 0 && prompt.trim().length > 0 && agentType.length > 0 && !submitting;
 
   const submit = async (): Promise<void> => {
     if (!canSubmit) return;
@@ -87,20 +90,7 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
           onChange={(e) => setPrompt(e.target.value)}
         />
       </label>
-      <label className="field">
-        <span className="field-label">Agent</span>
-        <select
-          data-testid="task-agent-select"
-          value={agentType}
-          onChange={(e) => setAgentType(e.target.value)}
-        >
-          {AGENT_OPTIONS.map((a) => (
-            <option key={a.value} value={a.value}>
-              {a.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <AgentPicker value={agentType} onChange={setAgentType} />
       <label className="field">
         <span className="field-label">Provider</span>
         <select

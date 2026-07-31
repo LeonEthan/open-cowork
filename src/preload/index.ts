@@ -88,6 +88,13 @@ const api: OpenCoworkApi = {
     };
   },
   // ── ticket #28 end ────────────────────────────────────────────────────
+
+  // ── ticket #22：agent 探测（picker 数据源） ──────────────────────────
+  agents: {
+    list: () => ipcRenderer.invoke('agents:list'),
+    refresh: () => ipcRenderer.invoke('agents:refresh'),
+  },
+  // ── ticket #22 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);
