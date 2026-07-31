@@ -128,7 +128,7 @@ export function captureGitChanges(cwd: string, baseSha: string | null): Captured
     'status',
     '--porcelain=v1',
     '-z',
-    '--untracked-files=normal',
+    '--untracked-files=all', // 展开未跟踪目录内的每个文件（normal 会折叠成「dir/」无法逐文件归一）
     '--',
     '.',
   ]);
