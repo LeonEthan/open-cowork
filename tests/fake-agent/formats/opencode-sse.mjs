@@ -235,6 +235,16 @@ export default function createOpencodeSseEmitter(io) {
     },
 
     async emit(event, ctx) {
+      try {
+        return await this._emit(event, ctx);
+      } finally {
+        // 收尾让出一个事件循环 tick：HTTP socket 用户态缓冲冲刷进内核后 runner 才继续
+        // （脚本下一条若是 exit，process.exit 不会截断在途 SSE 帧——TCP 已入内核保证送达）
+        await new Promise((r) => setImmediate(r));
+      }
+    },
+
+    async _emit(event, ctx) {
       switch (event?.kind) {
         case 'text':
         case 'thinking': {
@@ -242,6 +252,23 @@ export default function createOpencodeSseEmitter(io) {
           const partId = nextId('prt');
           const partType = event.kind === 'thinking' ? 'reasoning' : 'text';
           const chunks = splitChunks(event.text ?? '', event.chunks);
+          // 先发空 part.updated（part 创建帧，与真实 server 同序）——driver 依此定 part 类型，
+          // 后续 delta 帧才能正确路由 text/thinking
+          broadcast({
+            type: 'message.part.updated',
+            properties: {
+              sessionID: ctx.sessionId,
+              part: {
+                id: partId,
+                sessionID: ctx.sessionId,
+                messageID: messageId,
+                type: partType,
+                text: '',
+                time: { start: Date.now() },
+              },
+              time: Date.now(),
+            },
+          });
           let cumulative = '';
           for (const d of chunks) {
             cumulative += d;
@@ -351,6 +378,8 @@ export default function createOpencodeSseEmitter(io) {
               permission,
               patterns,
               metadata: input,
+              // 真实协议无 reason 字段（driver 读到的是 null）；fake 额外携带以回放脚本语义
+              reason: event.reason ?? null,
               always: [],
               tool: { messageID: messageId, callID: nextId('call') },
             },
