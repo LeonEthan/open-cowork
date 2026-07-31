@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { OpenCoworkApi } from '../shared/api';
+import type { CreateTaskInput, OpenCoworkApi, TaskStatus } from '../shared/api';
 
 /**
  * preload：contextIsolation 下的最小桥。
@@ -22,6 +22,20 @@ const api: OpenCoworkApi = {
     electron: process.versions.electron ?? '',
     chrome: process.versions.chrome ?? '',
     node: process.versions.node ?? '',
+  },
+
+  // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
+  workspaces: {
+    list: () => ipcRenderer.invoke('workspaces:list'),
+    pickAndAdd: () => ipcRenderer.invoke('workspaces:pick-and-add'),
+    addByPath: (dirPath: string) => ipcRenderer.invoke('workspaces:add-by-path', dirPath),
+    remove: (id: string) => ipcRenderer.invoke('workspaces:remove', id),
+  },
+  tasks: {
+    list: () => ipcRenderer.invoke('tasks:list'),
+    create: (input: CreateTaskInput) => ipcRenderer.invoke('tasks:create', input),
+    updateStatus: (id: string, status: TaskStatus) =>
+      ipcRenderer.invoke('tasks:update-status', id, status),
   },
 };
 
