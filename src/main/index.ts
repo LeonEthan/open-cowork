@@ -4,6 +4,7 @@ import { BrowserWindow, app, ipcMain, utilityProcess } from 'electron';
 import { DB_FILE_NAME, DATA_SUBDIRS, resolveDataDir } from '../shared/paths';
 import { createAgentEventDispatcher, recoverInterruptedTasks } from './agentEvents';
 import { createApprovalService } from './approval/service';
+import { captureTaskChanges } from './changes/capture';
 import { openDatabase } from './db/database';
 import type { AgentEvent, PermissionRequestPayload } from '../agent/events';
 import { registerServices } from './services';
@@ -44,6 +45,11 @@ const dispatchAgentEvent = createAgentEventDispatcher({
     return db;
   },
   broadcastTasksChanged,
+  // ticket #24：turn_end(completed) → 捕获工作区变更落库（awaiting_review 迁移前）
+  onTurnEndCompleted: (taskId) => {
+    if (!db) return;
+    captureTaskChanges(db, taskId, dataDir);
+  },
 });
 
 /**

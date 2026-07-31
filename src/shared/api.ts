@@ -50,6 +50,11 @@ export interface OpenCoworkApi {
   // ── ticket #20：权限审批流（审批托盘决议 + per-task 档位切换） ──────────
   approvals: ApprovalApi;
   // ── ticket #20 end ────────────────────────────────────────────────────
+
+  // ── ticket #24：diff 复查与回滚 ───────────────────────────────────────
+  /** 检查栏「变更」tab：变更列表 + 文件级/任务级接受回滚与恢复 */
+  changes: ChangesApi;
+  // ── ticket #24 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -237,3 +242,24 @@ export interface ApprovalApi {
   setPermissionMode: (taskId: string, mode: PermissionMode) => Promise<Task>;
 }
 // ── ticket #20 end ─────────────────────────────────────
+
+// ── ticket #24：diff 复查与回滚 ─────────────────────────────────────────
+// 独立 import 行（additive，不改文件顶部既有 import——并行票据零冲突合并约定）
+import type { FileChange } from '../main/db/entities';
+export type { FileChange };
+
+export interface ChangesApi {
+  /** 任务的变更列表（含 accepted/reverted 复查历史，按创建序） */
+  list: (taskId: string) => Promise<FileChange[]>;
+  /** 文件级接受（pending → accepted；不改工作区） */
+  accept: (changeId: string) => Promise<{ ok: true }>;
+  /** 文件级回滚（备份 → 还原基准 → reverted） */
+  rollback: (changeId: string) => Promise<{ ok: true }>;
+  /** 恢复：已回滚改动拷回工作区（reverted → pending）；快照期内（含 done 后）可用 */
+  restore: (changeId: string) => Promise<{ ok: true }>;
+  /** 任务级整体接受：全部 pending → accepted，任务 awaiting_review → done */
+  acceptAll: (taskId: string) => Promise<{ ok: true }>;
+  /** 任务级整体回滚：逐文件回滚全部 pending，完成后 awaiting_review → done */
+  rollbackAll: (taskId: string) => Promise<{ ok: true }>;
+}
+// ── ticket #24 end ──────────────────────────────────────────────────────

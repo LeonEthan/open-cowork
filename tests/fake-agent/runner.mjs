@@ -7,6 +7,9 @@
  * （permission_request 默认阻塞等回执——并发场景需要先发出多条再逐条决议）。
  * detach 事件内部的失败不再上抛（脚本已走远），仅经 emitter log 可见。
  */
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 export async function runScript(actions, io) {
   for (const action of actions) {
     switch (action?.action) {
@@ -30,6 +33,20 @@ export async function runScript(actions, io) {
         }
         break;
       }
+      // ticket #24 additive：相对 session cwd 写真实文件（制造工作区变更，
+      // diff 复查 e2e 与后续黄金路径都靠它；路径逃逸不受限——harness 仅测试用）
+      case 'write_file': {
+        if (typeof action.path !== 'string' || action.path.length === 0) {
+          throw new Error('write_file 需要 path');
+        }
+        const abs = resolve(process.cwd(), action.path);
+        mkdirSync(dirname(abs), { recursive: true });
+        const content = typeof action.content === 'string' ? action.content : '';
+        if (action.append) appendFileSync(abs, content);
+        else writeFileSync(abs, content);
+        io.log?.(`write_file ${abs}（${content.length} 字符${action.append ? '，append' : ''}）`);
+        break;
+      }
       case 'sleep':
         await io.sleep(action.ms ?? 0);
         break;
@@ -41,3 +58,4 @@ export async function runScript(actions, io) {
     }
   }
 }
+

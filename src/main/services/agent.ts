@@ -2,6 +2,7 @@ import * as conversationRepo from '../db/conversationRepo';
 import * as taskRepo from '../db/taskRepo';
 import * as workspaceRepo from '../db/workspaceRepo';
 import { prepareProviderEnv } from '../providers/runtime';
+import { prepareTaskCapture } from '../changes/capture';
 import type { ServiceContext } from './index';
 
 /**
@@ -54,6 +55,9 @@ export default function register(ctx: ServiceContext): void {
     // 在状态迁移前解析——provider 缺失/密钥不可用时启动失败、任务停留 ready。
     const providerEnv = prepareProviderEnv({ db: ctx.db, dataDir: ctx.dataDir, task });
 
+    // #24：任务开始 pin 变更捕获基准（git base SHA / 非 git 快照，幂等）——必须先于 agent 开跑
+    prepareTaskCapture(ctx.db, taskId, ctx.dataDir);
+
     taskRepo.updateStatus(ctx.db, taskId, 'running');
     const turn = conversationRepo.createTurn(ctx.db, taskId);
     conversationRepo.insertMessage(ctx.db, {
@@ -93,6 +97,9 @@ export default function register(ctx: ServiceContext): void {
     if (task.status !== 'awaiting_review') {
       throw new Error(`仅待复查状态可追问（当前 ${task.status}）`);
     }
+
+    // #24：追问轮不重 pin 基准（幂等调用：git 已 pin / 快照已建即跳过）
+    prepareTaskCapture(ctx.db, taskId, ctx.dataDir);
 
     taskRepo.updateStatus(ctx.db, taskId, 'running');
     const turn = conversationRepo.createTurn(ctx.db, taskId);

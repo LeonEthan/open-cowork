@@ -10,11 +10,12 @@ import { join } from 'node:path';
  *   <root>/open-cowork.db   全局单一 SQLite（十实体，WAL + FTS5）
  *   <root>/events/          agent 原始事件流 JSONL 旁路（排障/回放）
  *   <root>/worktrees/       per-task opt-in worktree 集中存放（ARCHITECTURE §8）
+ *   <root>/snapshots/       非 git 任务基准快照 + 回滚备份（ticket #24，ARCHITECTURE §7）
  */
 export function resolveDataDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.OPEN_COWORK_DATA_DIR ?? join(homedir(), '.open-cowork');
 }
 
-export const DATA_SUBDIRS = ['events', 'worktrees'] as const;
+export const DATA_SUBDIRS = ['events', 'worktrees', 'snapshots'] as const;
 
 export const DB_FILE_NAME = 'open-cowork.db';

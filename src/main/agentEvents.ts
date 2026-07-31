@@ -22,6 +22,12 @@ export interface AgentEventDispatchContext {
   db: Database;
   /** 任务行变更后通知 renderer 重拉（tasks:changed） */
   broadcastTasksChanged: () => void;
+  /**
+   * ticket #24 additive 挂钩：turn_end(completed) 时、awaiting_review 迁移前
+   * 捕获工作区变更（file_changes 落库）。实现见 changes/capture.ts（main/index.ts 接线）；
+   * 挂钩抛错只记日志、不阻塞状态机（捕获失败 ≠ 轮次失败）。
+   */
+  onTurnEndCompleted?: (taskId: string) => void;
 }
 
 /**
@@ -222,6 +228,16 @@ export function createAgentEventDispatcher(ctx: AgentEventDispatchContext) {
         sealBuffer(taskId);
         closeRunningTurn(taskId, event.status);
         if (event.status === 'completed') {
+          // #24：先捕获变更落库，再迁移 awaiting_review（捕获失败不阻塞迁移）
+          if (ctx.onTurnEndCompleted) {
+            try {
+              ctx.onTurnEndCompleted(taskId);
+            } catch (err) {
+              console.error(
+                `[agent-events] 变更捕获失败 (task=${taskId}): ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
           safeTransition(taskId, 'awaiting_review');
         } else if (event.status === 'failed') {
           safeTransition(taskId, 'failed', event.reason ?? 'agent 轮次失败');

@@ -136,16 +136,33 @@ export interface AlwaysAllowRuleRow {
 }
 
 export type FileChangeType = 'added' | 'modified' | 'deleted' | 'renamed';
+/** 'reverted' 即票面语义上的 rolledback（001 CHECK 已锁定三值，不可 additive 改名） */
 export type FileChangeStatus = 'pending' | 'accepted' | 'reverted';
+/** 捕获来源（ticket #24）：git 原生 status/diff / snapshot 快照兜底（ARCHITECTURE §7） */
+export type FileChangeSource = 'git' | 'snapshot';
 
 export interface FileChange {
   id: string;
   task_id: string;
   path: string;
   change_type: FileChangeType;
-  /** unified diff 文本（快照兜底方案同样归一为此，ARCHITECTURE §7） */
+  /** unified diff 文本（快照兜底方案同样归一为此，ARCHITECTURE §7）；二进制为 NULL */
   diff: string | null;
   status: FileChangeStatus;
+  // ── ticket #24（迁移 006，additive）──
+  /** diff 行统计 +N（无 diff 文本时为 NULL） */
+  added: number | null;
+  /** diff 行统计 -N（无 diff 文本时为 NULL） */
+  removed: number | null;
+  /** 捕获来源 */
+  source: FileChangeSource | null;
+  /** 捕获时 pin 的 base SHA（git 来源；与 tasks.base_sha 同值冗余；snapshot 来源为 NULL） */
+  base_sha: string | null;
+  /** 捕获轮次（追问后下一轮 turn_end 重新捕获递增；pending 行每轮 supersede） */
+  capture_round: number | null;
+  /** 回滚前备份的文件（snapshots/<taskId>/rollback-backup/...），「恢复」来源；
+   *  NULL = 未回滚，或回滚前文件在工作区不存在（此时恢复 = 删除该文件） */
+  snapshot_path: string | null;
   created_at: number;
   resolved_at: number | null;
 }

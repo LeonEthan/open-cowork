@@ -17,6 +17,9 @@
  *   {"action":"emit_raw","line":{...}}   原样写一行 wire 报文（逃生舱）
  *   {"action":"expect_stdin","match":"可选子串","timeoutMs":10000}
  *                                        等待 stdin 收到一条 user 输入（追问节奏控制）
+ *   {"action":"write_file","path":"a/b.txt","content":"...","append":false}
+ *                                        相对 session cwd 写真实文件（ticket #24 additive，
+ *                                        制造工作区变更；append=true 追加）
  *   {"action":"sleep","ms":100}
  *   {"action":"exit","code":0}
  *
