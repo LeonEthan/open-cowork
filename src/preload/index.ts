@@ -6,6 +6,8 @@ import type {
   OpenCoworkApi,
   TaskStatus,
 } from '../shared/api';
+// ticket #26（additive 独立行，并行票据零冲突合并约定）：自定义 ACP agent 注册入参
+import type { RegisterCustomAgentInput } from '../shared/api';
 
 /**
  * preload：contextIsolation 下的最小桥。
@@ -136,6 +138,23 @@ const api: OpenCoworkApi = {
     rollbackAll: (taskId: string) => ipcRenderer.invoke('changes:rollback-all', taskId),
   },
   // ── ticket #24 end ────────────────────────────────────────────────────
+
+  // ── ticket #26：agent 环境治理 + 自定义 ACP agent ─────────────────────
+  agentEnvironment: {
+    list: () => ipcRenderer.invoke('agents:list'),
+    refresh: () => ipcRenderer.invoke('agents:refresh'),
+    setOverridePath: (agentId: string, path: string) =>
+      ipcRenderer.invoke('agents:set-override-path', agentId, path),
+    clearOverride: (agentId: string) => ipcRenderer.invoke('agents:clear-override', agentId),
+    probeLog: () => ipcRenderer.invoke('agents:probe-log'),
+  },
+  customAgents: {
+    list: () => ipcRenderer.invoke('custom-agents:list'),
+    create: (input: RegisterCustomAgentInput) => ipcRenderer.invoke('custom-agents:create', input),
+    remove: (id: string) => ipcRenderer.invoke('custom-agents:remove', id),
+    reprobe: (id: string) => ipcRenderer.invoke('custom-agents:reprobe', id),
+  },
+  // ── ticket #26 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);

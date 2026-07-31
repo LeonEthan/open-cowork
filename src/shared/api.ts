@@ -55,6 +55,13 @@ export interface OpenCoworkApi {
   /** 检查栏「变更」tab：变更列表 + 文件级/任务级接受回滚与恢复 */
   changes: ChangesApi;
   // ── ticket #24 end ────────────────────────────────────────────────────
+
+  // ── ticket #26：agent 环境治理 + 自定义 ACP agent ─────────────────────
+  /** 环境卡片数据源（探测升级/路径修复/探测日志）；picker 仍走 #22 agents 组 */
+  agentEnvironment: AgentEnvironmentApi;
+  /** 自定义 ACP agent 注册表（表单录入命令与参数，PRD §4.5） */
+  customAgents: CustomAgentsApi;
+  // ── ticket #26 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -263,3 +270,78 @@ export interface ChangesApi {
   rollbackAll: (taskId: string) => Promise<{ ok: true }>;
 }
 // ── ticket #24 end ──────────────────────────────────────────────────────
+
+// ── ticket #26：agent 环境治理 + 自定义 ACP agent（additive） ─────────────
+// 形状与 main 侧 services/agentDetect.ts / services/customAgents.ts 对齐；
+// agents:list / agents:refresh 运行时已返回本丰富形状（#22 DetectedAgent 的超集，
+// picker 所用的 #22 字段原样保留）。
+
+/** 能力徽标元数据（设置页卡片；语义见 ARCHITECTURE §2 四家接入表） */
+export interface AgentCapabilities {
+  /** 审批能力：原生（路由回 open-cowork 审批流）/ 降级（无内建审批，静态策略兜底）/ 无 */
+  approval: 'native' | 'degraded' | 'none';
+  streaming: boolean;
+  usage: boolean;
+  mcp: boolean;
+}
+
+/** 单家 agent 的完整环境治理视图（内置 catalog + 自定义 ACP 合并列表条目） */
+export interface AgentEnvironmentInfo extends DetectedAgent {
+  /** `<exe> --version` 首行（尽力而为；未安装/失败为 null） */
+  version: string | null;
+  /** 认证启发式结论；未安装与自定义 agent（无启发式）为 null——不因此置灰 */
+  authenticated: boolean | null;
+  capabilities: AgentCapabilities;
+  /** 安装命令（chip 一键复制）；自定义 agent 为 null */
+  installCommand: string | null;
+  homepage: string | null;
+  /** 生效的自定义路径修复（设置页「恢复自动探测」依据） */
+  overridePath: string | null;
+  probedAt: number;
+  source: 'builtin' | 'custom';
+}
+
+export interface AgentEnvironmentApi {
+  /** 合并列表（内置缓存 + 自定义 DB 快照） */
+  list: () => Promise<AgentEnvironmentInfo[]>;
+  /** 强制重测（内置全量 + 自定义逐个实时重探测） */
+  refresh: () => Promise<AgentEnvironmentInfo[]>;
+  /** 自定义路径修复：绝对路径校验 → 持久化 override → 重测；不可用路径 reject */
+  setOverridePath: (agentId: string, path: string) => Promise<AgentEnvironmentInfo[]>;
+  /** 移除 override，恢复自动探测 */
+  clearOverride: (agentId: string) => Promise<AgentEnvironmentInfo[]>;
+  /** 探测日志（key = agentId 或 custom:<dbId>，按时间序的文本行） */
+  probeLog: () => Promise<Record<string, string[]>>;
+}
+
+/** 自定义 ACP agent 卡片 DTO（注册行 + 探测快照展平） */
+export interface CustomAgentInfo {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  installed: boolean;
+  resolvedPath: string | null;
+  version: string | null;
+  probeError: string | null;
+  probedAt: number | null;
+  createdAt: number;
+}
+
+export interface RegisterCustomAgentInput {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export interface CustomAgentsApi {
+  list: () => Promise<CustomAgentInfo[]>;
+  /** 注册（校验 → 落库 → 即时探测）；校验失败 reject */
+  create: (input: RegisterCustomAgentInput) => Promise<CustomAgentInfo[]>;
+  remove: (id: string) => Promise<{ ok: true }>;
+  /** 修复命令/环境后手动重验证 */
+  reprobe: (id: string) => Promise<CustomAgentInfo[]>;
+}
+// ── ticket #26 end ──────────────────────────────────────────────────────

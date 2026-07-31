@@ -35,7 +35,11 @@ export interface SettingsSectionDef {
 
 export interface SidebarSectionDef {
   id: string;
-  /** 侧栏区块标题（§1：克制，无多余装饰） */
+  /**
+   * 侧栏区块标题（§1：克制，无多余装饰）。
+   * ticket #26（additive）：空串 = 无标题的裸区块（如 agent 横幅——健康时组件返回
+   * null，整区块在 DOM 中完全消失；渲染分支见 components/Sidebar.tsx）。
+   */
   title: string;
   order: number;
   component: ComponentType;

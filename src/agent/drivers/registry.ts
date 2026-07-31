@@ -46,3 +46,37 @@ export function listDrivers(): AgentDriverDefinition[] {
 export function getDriverDefinition(id: string): AgentDriverDefinition | null {
   return listDrivers().find((d) => d.id === id) ?? null;
 }
+
+// ── ticket #26（additive）：自定义 ACP agent 动态实例 ─────────────────────
+// 内置四家经上方 glob 收集；自定义 ACP agent 的注册 spec 存 main 侧 SQLite
+// （custom_agents 表，utility 无 DB 访问）——main 在 start 指令里随附 spec，
+// 经本函数实例化 acp driver（src/agent/drivers/acp.driver.ts）。
+
+import { createAcpDriver } from './acp.driver';
+
+export interface CustomAgentSpec {
+  /** custom_agents.id（driver 定义 id 拼为 'custom:<id>'，与 task.agent_type 对应） */
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export function createCustomDriverDefinition(spec: CustomAgentSpec): AgentDriverDefinition {
+  const driverId = `custom:${spec.id}`;
+  return {
+    id: driverId,
+    displayName: spec.name,
+    approval: 'native', // ACP session/request_permission 原生审批（#20 中继链）
+    create: () =>
+      createAcpDriver({
+        id: driverId,
+        displayName: spec.name,
+        command: spec.command,
+        args: spec.args,
+        ...(spec.env ? { env: spec.env } : {}),
+      }),
+  };
+}
+// ── ticket #26 end ──────────────────────────────────────────────────────────

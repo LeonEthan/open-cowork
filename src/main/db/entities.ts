@@ -227,4 +227,9 @@ export interface CustomAgent {
   protocol: 'acp';
   env_json: string | null;
   created_at: number;
+  /**
+   * 最近一次探测结果快照 JSON（迁移 008 / ticket #26，additive）：
+   * { ok, resolvedPath, version, error, at }；NULL = 注册后尚未探测。
+   */
+  last_probe_json: string | null;
 }
