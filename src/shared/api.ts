@@ -40,13 +40,17 @@ export interface OpenCoworkApi {
   // ── ticket #22：agent 探测（picker 数据源；#26 完整卡片） ─────────────
   agents: AgentDetectApi;
   // ── ticket #22 end ────────────────────────────────────────────────────
+
+  // ── ticket #21：provider 与凭证（任意 provider 自由配置） ──────────────
+  providers: ProvidersApi;
+  // ── ticket #21 end ──────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
 export type { Task, TaskStatus, Workspace };
 
-/** 侧栏/文档流列表项：Task + 所属 workspace 名（元信息展示用） */
-export type TaskListItem = Task & { workspace_name: string };
+/** 侧栏/文档流列表项：Task + 所属 workspace 名 + provider 名（元信息展示用） */
+export type TaskListItem = Task & { workspace_name: string; provider_name: string | null };
 
 export interface CreateTaskInput {
   workspaceId: string;
@@ -121,3 +125,79 @@ export interface AgentDetectApi {
   refresh: () => Promise<DetectedAgent[]>;
 }
 // ── ticket #22 end ────────────────────────────────────────────────────
+
+// ── ticket #21：provider 与凭证（任意 provider 自由配置） ──────────────────
+
+/** 内置预设目录条目（六家；静态数据） */
+export interface ProviderPresetInfo {
+  id: string;
+  name: string;
+  /** 默认线协议（anthropic 兼容 / openai 兼容） */
+  protocol: 'anthropic' | 'openai';
+  baseUrl: string;
+  /** 双协议端点（有则给出） */
+  endpoints: { anthropic?: string; openai?: string };
+  /** 静态兜底模型清单 */
+  models: string[];
+  modelsDevId: string;
+}
+
+/** provider 列表 DTO（密钥只给固定掩码；密文/明文不出 main 进程） */
+export interface ProviderListItem {
+  id: string;
+  name: string;
+  kind: 'preset' | 'custom';
+  protocol: string;
+  base_url: string;
+  preset_id: string | null;
+  has_key: boolean;
+  key_masked: string;
+  models_fetched_at: number | null;
+  created_at: number;
+}
+
+/** 模型清单条目（models.dev 元数据：上下文长度 / 价格 USD·1M tokens；无记录为 null） */
+export interface ProviderModelInfo {
+  id: string;
+  contextLength: number | null;
+  inputPrice: number | null;
+  outputPrice: number | null;
+}
+
+export interface AddPresetProviderInput {
+  presetId: string;
+  apiKey: string;
+  /** 显示名覆盖（缺省用预设名） */
+  name?: string;
+  /** 协议覆盖（预设具备对应端点时可用；缺省用预设默认） */
+  protocol?: 'anthropic' | 'openai';
+}
+
+export interface AddCustomProviderInput {
+  name: string;
+  protocol: 'anthropic' | 'openai';
+  baseUrl: string;
+  apiKey: string;
+  /** 密钥 env 名覆盖（缺省按协议约定：ANTHROPIC_AUTH_TOKEN / OPENAI_API_KEY） */
+  keyEnv?: string;
+  /** base URL env 名覆盖（缺省：ANTHROPIC_BASE_URL / OPENAI_BASE_URL） */
+  baseUrlEnv?: string;
+}
+
+export interface ProvidersApi {
+  /** 内置预设目录 */
+  presets: () => Promise<ProviderPresetInfo[]>;
+  list: () => Promise<ProviderListItem[]>;
+  /** 预设一键添加（密钥经 safeStorage 加密落库） */
+  addPreset: (input: AddPresetProviderInput) => Promise<ProviderListItem>;
+  /** 自定义 provider（base URL + 协议 + 密钥） */
+  addCustom: (input: AddCustomProviderInput) => Promise<ProviderListItem>;
+  /** 移除（引用它的任务 provider_id/model 快照同事务清空） */
+  remove: (id: string) => Promise<{ ok: true }>;
+  /** 模型清单（缓存 → 预设静态兜底；无网络） */
+  models: (id: string) => Promise<ProviderModelInfo[]>;
+  /** 刷新清单：/models 拉取 × models.dev 元数据归并后缓存；远端失败 reject（UI 保留既有清单） */
+  refreshModels: (id: string) => Promise<ProviderModelInfo[]>;
+}
+// ── ticket #21 end ──────────────────────────────────────────────────────────
+

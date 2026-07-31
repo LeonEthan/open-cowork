@@ -93,6 +93,7 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
         <span data-testid="detail-status-label">{STATUS_LABELS[task.status]}</span>
         <span className="muted">
           · {task.workspace_name} · {agentLabel(task.agent_type)}
+          {task.provider_name ? ` · ${task.provider_name}` : ''}
           {task.model ? ` · ${task.model}` : ''}
         </span>
       </p>
@@ -307,6 +308,11 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
           <span className="chip" data-testid="composer-agent-chip">
             {agentLabel(task.agent_type)}
           </span>
+          {task.provider_name && (
+            <span className="chip" data-testid="composer-provider-chip">
+              {task.provider_name}
+            </span>
+          )}
           {task.model && (
             <span className="chip" data-testid="composer-model-chip">
               {task.model}

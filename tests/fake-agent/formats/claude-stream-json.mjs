@@ -9,6 +9,23 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+
+/**
+ * 【ticket #21 additive】白名单 env 回显：收集 ANTHROPIC_ 与 OPENAI_ 前缀的进程 env，
+ * 附上 init 报文的 env_echo 字段（driver 归一化为 session_started 时会丢弃这些字段，
+ * 不会落盘进 JSONL 旁路/DB）；若设了 FAKE_AGENT_ENV_DUMP，另把同一份写到该路径——
+ * e2e 借此断言「provider 密钥经 DriverStartParams.env 真实到达 agent 子进程」。
+ */
+function collectWhitelistedEnv() {
+  const out = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if ((k.startsWith('ANTHROPIC_') || k.startsWith('OPENAI_')) && typeof v === 'string') {
+      out[k] = v;
+    }
+  }
+  return out;
+}
 
 export default function createClaudeStreamJsonEmitter(io) {
   const { writeLine } = io;
@@ -116,6 +133,15 @@ export default function createClaudeStreamJsonEmitter(io) {
 
   return {
     start(ctx) {
+      // #21：白名单 env 回显（见文件顶部注释）；dump 失败静默——旁路不阻塞主流程
+      const envEcho = collectWhitelistedEnv();
+      if (process.env.FAKE_AGENT_ENV_DUMP) {
+        try {
+          writeFileSync(process.env.FAKE_AGENT_ENV_DUMP, JSON.stringify(envEcho, null, 2), 'utf8');
+        } catch {
+          // 忽略
+        }
+      }
       send({
         type: 'system',
         subtype: 'init',
@@ -132,6 +158,7 @@ export default function createClaudeStreamJsonEmitter(io) {
         agents: [],
         skills: [],
         plugins: [],
+        env_echo: envEcho,
         uuid: randomUUID(),
       });
     },

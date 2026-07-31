@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CreateTaskInput, OpenCoworkApi, TaskStatus } from '../shared/api';
+import type {
+  AddCustomProviderInput,
+  AddPresetProviderInput,
+  CreateTaskInput,
+  OpenCoworkApi,
+  TaskStatus,
+} from '../shared/api';
 
 /**
  * preload：contextIsolation 下的最小桥。
@@ -95,6 +101,18 @@ const api: OpenCoworkApi = {
     refresh: () => ipcRenderer.invoke('agents:refresh'),
   },
   // ── ticket #22 end ────────────────────────────────────────────────────
+
+  // ── ticket #21：provider 与凭证（任意 provider 自由配置） ──────────────
+  providers: {
+    presets: () => ipcRenderer.invoke('providers:presets'),
+    list: () => ipcRenderer.invoke('providers:list'),
+    addPreset: (input: AddPresetProviderInput) => ipcRenderer.invoke('providers:add-preset', input),
+    addCustom: (input: AddCustomProviderInput) => ipcRenderer.invoke('providers:add-custom', input),
+    remove: (id: string) => ipcRenderer.invoke('providers:remove', id),
+    models: (id: string) => ipcRenderer.invoke('providers:models', id),
+    refreshModels: (id: string) => ipcRenderer.invoke('providers:refresh-models', id),
+  },
+  // ── ticket #21 end ──────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);
