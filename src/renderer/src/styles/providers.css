@@ -1,0 +1,167 @@
+/*
+ * provider 与凭证（ticket #21）样式：设置页区块 + ProviderModelPicker。
+ * 只用 tokens.css 变量（§2/§6）；零阴影（§3）；本文件不引入动效。
+ */
+
+.providers-hint {
+  margin: 0 0 12px;
+  font-size: var(--font-size-ui);
+}
+
+.providers-sub-title {
+  margin: 16px 0 8px;
+  font-size: var(--font-size-ui);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.providers-presets,
+.providers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-preset,
+.provider-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 8px 10px;
+  background: var(--bg);
+}
+
+.provider-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-row-main .provider-name {
+  font-weight: 650;
+  color: var(--ink);
+  font-size: var(--font-size-ui);
+}
+
+.provider-row-main .icon-btn {
+  margin-left: auto;
+}
+
+.provider-endpoint {
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.provider-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.provider-key-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-key-form input {
+  flex: 1;
+  min-width: 220px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--font-size-ui);
+}
+
+.provider-key-form input:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+
+.provider-protocol-select {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--font-size-ui);
+}
+
+.provider-custom-form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 480px;
+}
+
+.provider-custom-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-custom-form .field-label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.provider-custom-form input,
+.provider-custom-form select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--font-size-ui);
+}
+
+.provider-custom-form input:focus,
+.provider-custom-form select:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+
+/* 模型清单表：极简、无边框大卡片（§4 信息密度约定） */
+.provider-models {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.provider-models th,
+.provider-models td {
+  text-align: left;
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+}
+
+.provider-models th {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+
+.provider-models tr:last-child td {
+  border-bottom: none;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}

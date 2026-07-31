@@ -21,8 +21,8 @@ export interface CreateTaskInput {
   model?: string | null;
 }
 
-/** 侧栏/文档流列表项：附带 workspace 名（元信息展示用，DESIGN.md §1） */
-export type TaskListItem = Task & { workspace_name: string };
+/** 侧栏/文档流列表项：附带 workspace 名 + provider 名（元信息展示用，DESIGN.md §1） */
+export type TaskListItem = Task & { workspace_name: string; provider_name: string | null };
 
 /** 从需求描述派生标题：取首行、压缩空白、截断 40 字 */
 export function deriveTitle(prompt: string): string {
@@ -85,12 +85,14 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
   return task;
 }
 
-/** 全部任务（新→旧），联表带 workspace 名 */
+/** 全部任务（新→旧），联表带 workspace 名与 provider 名（#21 chip 展示） */
 export function list(db: Database): TaskListItem[] {
   return db
     .prepare(
-      `SELECT t.*, w.name AS workspace_name
-       FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
+      `SELECT t.*, w.name AS workspace_name, p.name AS provider_name
+       FROM tasks t
+       JOIN workspaces w ON w.id = t.workspace_id
+       LEFT JOIN providers p ON p.id = t.provider_id
        ORDER BY t.created_at DESC, t.id DESC`,
     )
     .all() as TaskListItem[];

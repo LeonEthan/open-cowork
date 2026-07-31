@@ -172,6 +172,20 @@ export interface Provider {
   credential_key: string | null;
   /** models.dev 元数据缓存（上下文长度、价格等） */
   models_json: string | null;
+  /**
+   * safeStorage.encryptString 密文（base64，ticket #21 / 迁移 005）。
+   * 密钥明文绝不入库、不出本机；解密只在 main 进程内组装 agent env 时发生。
+   */
+  encrypted_api_key: string | null;
+  /** 来源内置预设 id（kind='preset' 时；模型清单/env 约定的兜底来源，ticket #21） */
+  preset_id: string | null;
+  /**
+   * env 角色映射覆盖 JSON（{ keyEnvs?: string[], baseUrlEnv?: string }，ticket #21）；
+   * NULL = 预设/协议默认（如 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL）。
+   */
+  env_map_json: string | null;
+  /** models_json 最近一次远端拉取时间（NULL = 纯静态预设兜底，ticket #21） */
+  models_fetched_at: number | null;
   created_at: number;
   updated_at: number;
 }

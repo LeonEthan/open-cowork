@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ProviderModelPicker } from '../../components/pickers/ProviderModelPicker';
 import { AGENT_OPTIONS, STATUS_LABELS, agentLabel, statusDotClass } from '../../lib/taskStatus';
 import { useAppStore } from '../../stores/appStore';
 import { useDataStore } from '../../stores/data';
@@ -7,12 +8,9 @@ import type { SidebarSectionDef } from '../registry';
 /**
  * 内置「任务」侧栏区块（ticket #18 实装，DESIGN.md §1）：
  * 任务项 = 状态点（六态，语义 token；仅 running pulse）+ 标题 + 元信息。
- * 顶部「新建任务」表单：需求描述 textarea + agent/provider/model 占位 picker。
+ * 顶部「新建任务」表单：需求描述 textarea + agent 选择 + provider/model picker
+ * （#21 实化：components/pickers/ProviderModelPicker.tsx，选择落库 task.provider_id/model）。
  */
-
-// ── 静态占位 picker 数据：真实 provider/model 目录由 #19/#21/#26 注水替换 ──
-const PROVIDER_OPTIONS = [{ value: '', label: '默认 provider（占位 · #21 接入）' }] as const;
-const MODEL_OPTIONS = [{ value: '', label: '默认 model（占位 · #21/#26 接入）' }] as const;
 
 function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
   const workspaces = useDataStore((s) => s.workspaces);
@@ -101,34 +99,12 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
           ))}
         </select>
       </label>
-      <label className="field">
-        <span className="field-label">Provider</span>
-        <select
-          data-testid="task-provider-select"
-          value={providerId}
-          onChange={(e) => setProviderId(e.target.value)}
-        >
-          {PROVIDER_OPTIONS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span className="field-label">Model</span>
-        <select
-          data-testid="task-model-select"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-        >
-          {MODEL_OPTIONS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ProviderModelPicker
+        providerId={providerId}
+        model={model}
+        onProviderChange={setProviderId}
+        onModelChange={setModel}
+      />
       {lastError && (
         <p className="form-error" role="alert" data-testid="task-form-error">
           {lastError}
