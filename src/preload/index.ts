@@ -37,6 +37,21 @@ const api: OpenCoworkApi = {
     updateStatus: (id: string, status: TaskStatus) =>
       ipcRenderer.invoke('tasks:update-status', id, status),
   },
+  onTasksChanged: (cb: () => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('tasks:changed', listener);
+    return () => {
+      ipcRenderer.removeListener('tasks:changed', listener);
+    };
+  },
+
+  // ── ticket #19：agent 会话控制与历史 ─────────────────────────
+  agent: {
+    start: (taskId: string) => ipcRenderer.invoke('agent:start', taskId),
+    followup: (taskId: string, text: string) => ipcRenderer.invoke('agent:followup', taskId, text),
+    cancel: (taskId: string) => ipcRenderer.invoke('agent:cancel', taskId),
+    history: (taskId: string) => ipcRenderer.invoke('agent:history', taskId),
+  },
 
   // ── ticket #28: 内置终端 tab ─────────────────────────────────────────
   ptyCreate: (key, cols, rows) =>

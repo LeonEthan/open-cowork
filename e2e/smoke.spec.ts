@@ -31,9 +31,8 @@ test('smoke: 三栏骨架 + 主题 + utility 直连 + DB 初始化', async () =>
     const theme = await win.evaluate(() => document.documentElement.dataset.theme);
     expect(['light', 'dark']).toContain(theme);
 
-    // renderer ⇄ utility MessageChannel：ping-pong + 流式计数（§架构1）
+    // renderer ⇄ utility MessageChannel：ping-pong（§架构1；#19 起为真实事件流通道）
     await expect(win.getByTestId('utility-status')).toContainText('pong', { timeout: 15_000 });
-    await expect(win.getByTestId('utility-status')).toContainText('tick', { timeout: 15_000 });
 
     // SQLite 在数据目录初始化
     await expect

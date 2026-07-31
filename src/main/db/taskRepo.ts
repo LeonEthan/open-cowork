@@ -55,14 +55,15 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
     worktree_path: null,
     base_sha: null,
     session_id: null,
+    fail_reason: null,
     created_at: now,
     updated_at: now,
   };
   db.prepare(
     `INSERT INTO tasks (id, workspace_id, title, prompt, agent_type, provider_id, model,
                         permission_mode, status, use_worktree, worktree_path, base_sha,
-                        session_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        session_id, fail_reason, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     task.id,
     task.workspace_id,
@@ -77,6 +78,7 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
     task.worktree_path,
     task.base_sha,
     task.session_id,
+    task.fail_reason,
     task.created_at,
     task.updated_at,
   );
@@ -101,6 +103,7 @@ export function getById(db: Database, id: string): Task | null {
 
 /**
  * 状态迁移：先经状态机校验（非法迁移抛错、不落库），合法则更新 status + updated_at。
+ * failReason：迁入 failed 时必填（UI 呈现原因）；迁回 ready/running（重试/再跑）自动清空。
  * 返回迁移后的任务行。
  */
 export function updateStatus(
@@ -108,10 +111,27 @@ export function updateStatus(
   id: string,
   to: TaskStatus,
   now: number = Date.now(),
+  failReason?: string,
 ): Task {
   const task = getById(db, id);
   if (!task) throw new Error(`任务不存在: ${id}`);
   assertTransition(task.status, to);
-  db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run(to, now, id);
-  return { ...task, status: to, updated_at: now };
+  const reason =
+    to === 'failed'
+      ? (failReason ?? task.fail_reason ?? '未知错误')
+      : to === 'ready' || to === 'running'
+        ? null
+        : task.fail_reason;
+  db.prepare('UPDATE tasks SET status = ?, fail_reason = ?, updated_at = ? WHERE id = ?').run(
+    to,
+    reason,
+    now,
+    id,
+  );
+  return { ...task, status: to, fail_reason: reason, updated_at: now };
+}
+
+/** 写入 agent 原生 session id（session_started 时；1:1，只允许写一次或同值重写） */
+export function setSessionId(db: Database, id: string, sessionId: string, now: number = Date.now()): void {
+  db.prepare('UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?').run(sessionId, now, id);
 }

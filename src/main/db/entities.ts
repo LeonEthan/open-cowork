@@ -49,6 +49,8 @@ export interface Task {
   base_sha: string | null;
   /** Task 与 agent session 严格 1:1（迁移 002 / ticket #18 留位可空；#19 接入 agent 运行时写入） */
   session_id: string | null;
+  /** failed 态原因（迁移 003 / #19：agent 异常时记录，UI 呈现 + 重试；非 failed 为 null） */
+  fail_reason: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -97,6 +99,8 @@ export interface ToolCall {
   input_json: string;
   output_json: string | null;
   status: ToolCallStatus;
+  /** 任务内统一序号（迁移 003 / #19：与 messages.seq 同一计数器，文档流单时间线排序依据） */
+  seq: number | null;
   started_at: number;
   ended_at: number | null;
 }

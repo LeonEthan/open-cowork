@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CreateTaskInput, Task, TaskListItem, Workspace } from '../../../shared/api';
 import { useAppStore } from './appStore';
+import { useConversationStore } from './conversation';
 
 /**
  * workspace 与任务的本地数据 store（ticket #18）。
@@ -48,6 +49,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (currentTaskId && !tasks.some((t) => t.id === currentTaskId)) {
       setCurrentTaskId(null);
     }
+    // 会话渲染态同步修剪（任务被删后不留孤儿时间线）
+    useConversationStore.getState().prune(new Set(tasks.map((t) => t.id)));
   },
 
   addWorkspaceViaDialog: async () => {

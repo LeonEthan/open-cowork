@@ -11,6 +11,7 @@ import type { TaskStatus } from './entities';
  *   running ⇄ awaiting_approval
  *   running → awaiting_review
  *   awaiting_approval → awaiting_review
+ *   awaiting_review → running   （ticket #19 additive：用户追问继续，US#12）
  *   awaiting_review → done
  *   活跃态（ready / running / awaiting_approval / awaiting_review）→ failed | cancelled
  *   failed → ready（重试）
@@ -34,6 +35,7 @@ const LEGAL_EDGES: ReadonlySet<string> = (() => {
   add('awaiting_approval', 'running');
   add('running', 'awaiting_review');
   add('awaiting_approval', 'awaiting_review');
+  add('awaiting_review', 'running'); // #19：追问继续（US#12）
   add('awaiting_review', 'done');
   for (const s of ACTIVE_STATUSES) {
     add(s, 'failed');
