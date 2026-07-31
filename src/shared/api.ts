@@ -9,4 +9,19 @@ export interface OpenCoworkApi {
   getDataDir: () => Promise<string>;
   platform: string;
   versions: { electron: string; chrome: string; node: string };
+
+  // ── ticket #28: 内置终端 tab ─────────────────────────────────────────
+  /** 创建（或复用）per-task 终端会话；key=taskId 或 'global'；懒启动——首次调用才起 shell */
+  ptyCreate: (
+    key: string,
+    cols: number,
+    rows: number,
+  ) => Promise<{ ok: boolean; cwd: string; created: boolean }>;
+  ptyWrite: (key: string, data: string) => void;
+  ptyResize: (key: string, cols: number, rows: number) => void;
+  ptyDispose: (key: string) => void;
+  /** 订阅会话输出 / 退出；均返回取消订阅函数 */
+  onPtyData: (key: string, cb: (data: string) => void) => () => void;
+  onPtyExit: (key: string, cb: (exitCode: number) => void) => () => void;
+  // ── ticket #28 end ────────────────────────────────────────────────────
 }

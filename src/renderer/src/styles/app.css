@@ -212,3 +212,27 @@
     opacity: 0.35;
   }
 }
+
+/* ── ticket #28: 内置终端 tab ─────────────────────────── */
+/* 终端占满检查栏内容区：常规 12px 内边距让给 xterm 自管理（fit 按容器尺寸换算行列） */
+.inspector-body:has(> .terminal-host) {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  background: var(--bg);
+  /* 视口四周一线呼吸（克制，§7 无装饰） */
+  padding: 4px 0 4px 6px;
+}
+.terminal-xterm-holder {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/* ── ticket #28 end ────────────────────────────────────── */
