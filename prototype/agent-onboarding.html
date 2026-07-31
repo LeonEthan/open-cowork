@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. ticket #14 agent 探测、安装引导与修复流程
+  三个变体，底部浮条或 ←/→ 切换，?variant=A|B|C（token 遵循 docs/DESIGN.md §2，浅色 github 主题）
+  A — 首启向导式：全屏多步 onboarding（欢迎 → 检测 → 逐 agent 指引 → 完成），设置页卡片管理
+  B — 无向导融入式：直接进主界面，侧栏横幅提示 + 设置页 Agent 管理卡片（含修复入口、能力徽标）
+  C — 命令面板驱动式：⌘K 统一入口处理检测/安装/修复/添加，设置页只留极简状态列表
+  运行：open prototype/agent-onboarding.html
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>prototype: agent 引导与修复 — open-cowork</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #fafafa; --bg-sunk: #f4f4f5; --bg-elev: #ffffff;
+    --ink: #333333; --ink-2: #777777; --ink-3: #a1a1aa; --ink-4: #d4d4d8;
+    --line: #e4e4e7; --accent: #4183C4; --accent-soft: #eef4fa;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --r-sm: 8px; --r-md: 12px; --r-pill: 9999px;
+    --font: "Open Sans","Clear Sans","Helvetica Neue",Helvetica,Arial,"PingFang SC",sans-serif;
+    --mono: "SF Mono","JetBrains Mono",ui-monospace,monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); color: var(--ink); background: var(--bg); font-size: 15px; line-height: 1.7; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { border: 1px solid var(--line); background: var(--bg-elev); border-radius: var(--r-sm); padding: 7px 16px; font-size: 13px; color: var(--ink-2); }
+  .btn:hover { border-color: var(--ink-3); color: var(--ink); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .btn.small { padding: 4px 12px; font-size: 12px; }
+  .cmd-chip { font-family: var(--mono); font-size: 12.5px; background: var(--bg-sunk); border-radius: 6px; padding: 6px 12px; display: flex; align-items: center; gap: 10px; }
+  .cmd-chip .copy { margin-left: auto; border: none; background: none; color: var(--ink-3); font-size: 12px; }
+  .cmd-chip .copy:hover { color: var(--ink); }
+
+  /* agent 状态徽标（三变体共用） */
+  .badge { font-size: 11px; border-radius: var(--r-pill); padding: 2px 10px; white-space: nowrap; }
+  .badge.ok { background: #f0fdf4; color: var(--ok); }
+  .badge.miss { background: var(--bg-sunk); color: var(--ink-3); }
+  .badge.warn { background: #fffbeb; color: var(--warn); }
+  .badge.err { background: #fef2f2; color: var(--err); }
+  .cap { font-size: 10.5px; border: 1px solid var(--line); border-radius: var(--r-pill); padding: 1px 8px; color: var(--ink-2); }
+  .cap.no { color: var(--ink-3); text-decoration: line-through; border-style: dashed; }
+
+  /* ========== 变体 A：首启向导 ========== */
+  .wizard { max-width: 640px; margin: 0 auto; padding: 72px 32px; }
+  .wizard .steps { display: flex; gap: 8px; margin-bottom: 40px; }
+  .wizard .step { flex: 1; height: 3px; border-radius: 2px; background: var(--line); }
+  .wizard .step.on { background: var(--accent); }
+  .wizard h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 8px; }
+  .wizard .sub { color: var(--ink-2); margin-bottom: 36px; }
+  .agent-row { border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 20px; margin-bottom: 12px; }
+  .agent-row .head { display: flex; align-items: center; gap: 10px; }
+  .agent-row .name { font-weight: 600; font-size: 14.5px; }
+  .agent-row .ver { font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
+  .agent-row .caps { display: flex; gap: 6px; margin: 8px 0; }
+  .agent-row .install { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .agent-row .install .tip { font-size: 12.5px; color: var(--ink-2); }
+  .wizard .foot { display: flex; justify-content: space-between; margin-top: 40px; }
+
+  /* ========== 变体 B：融入式（主界面 + 设置卡片） ========== */
+  .appb { display: flex; height: 100vh; }
+  .sideb { width: 240px; flex-shrink: 0; border-right: 1px solid var(--line); background: var(--bg-soft); padding: 14px 10px; }
+  .banner { margin: 10px; padding: 12px 14px; border: 1px solid var(--warn); background: #fffbeb; border-radius: var(--r-md); font-size: 12.5px; color: var(--ink-2); }
+  .banner b { color: var(--ink); }
+  .banner .btn { margin-top: 8px; }
+  .task-b { display: flex; gap: 8px; padding: 7px 10px; font-size: 13.5px; color: var(--ink-2); }
+  .mainb { flex: 1; overflow-y: auto; }
+  .settings { max-width: 720px; margin: 0 auto; padding: 44px 36px; }
+  .settings h2 { font-size: 20px; font-weight: 650; margin-bottom: 4px; }
+  .settings .s-sub { font-size: 13px; color: var(--ink-3); margin-bottom: 28px; }
+  .agent-card { border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px 20px; margin-bottom: 14px; }
+  .agent-card .head { display: flex; align-items: center; gap: 10px; }
+  .agent-card .path { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 4px; }
+  .repair { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .repair .row { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .repair input { flex: 1; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; font-family: var(--mono); font-size: 12px; }
+  .add-custom { border: 1px dashed var(--ink-4); border-radius: var(--r-md); padding: 14px 20px; color: var(--ink-2); font-size: 13.5px; text-align: center; cursor: pointer; }
+  .add-custom:hover { border-color: var(--ink-3); color: var(--ink); }
+  .custom-form { border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 20px; margin-top: 12px; display: none; }
+  .custom-form.open { display: block; }
+  .custom-form .frow { display: flex; gap: 10px; margin-bottom: 10px; }
+  .custom-form label { font-size: 12.5px; color: var(--ink-2); width: 88px; padding-top: 6px; }
+  .custom-form input { flex: 1; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; font-size: 13px; font-family: var(--mono); }
+
+  /* ========== 变体 C：命令面板驱动 ========== */
+  .palette-mask { position: fixed; inset: 0; background: rgba(0,0,0,.18); display: flex; justify-content: center; padding-top: 14vh; }
+  .palette { width: 560px; height: fit-content; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.12); }
+  .palette .pin { padding: 14px 18px; border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: 14px; display: flex; gap: 8px; }
+  .pitem { display: flex; align-items: center; gap: 10px; padding: 11px 18px; font-size: 13.5px; color: var(--ink-2); }
+  .pitem.sel { background: var(--accent-soft); color: var(--ink); }
+  .pitem .kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .c-settings { max-width: 640px; margin: 0 auto; padding: 44px 32px; filter: blur(1.5px); pointer-events: none; }
+  .c-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .c-row .name { font-weight: 550; }
+
+  /* ========== 切换浮条 ========== */
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #18181b; color: #fafafa; border-radius: var(--r-pill); padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.28); z-index: 90; }
+  .switcher button { background: none; border: none; color: #a1a1aa; font-size: 15px; padding: 4px 10px; border-radius: var(--r-pill); }
+  .switcher button:hover { color: #fff; background: #27272a; }
+  .switcher .label { padding: 0 10px; font-size: 12.5px; min-width: 210px; text-align: center; color: #d4d4d8; }
+  .switcher .label b { color: #fff; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+/* ================= mock：agent catalog 检测状态 ================= */
+const AGENTS = [
+  { name: "Claude Code", cmd: "claude", ver: "v2.1.220", status: "ok",
+    caps: ["审批", "MCP", "双工"], nocaps: [], install: null, path: "/usr/local/bin/claude" },
+  { name: "Codex CLI", cmd: "codex", ver: "v0.146.0", status: "ok",
+    caps: ["审批", "MCP", "双工"], nocaps: [], install: null, path: "/usr/local/bin/codex" },
+  { name: "opencode", cmd: "opencode", ver: null, status: "miss",
+    caps: ["审批", "MCP", "双工"], nocaps: [], install: "npm install -g opencode-ai", path: null },
+  { name: "pi", cmd: "pi", ver: "v0.83.0", status: "warn", warnText: "能力缺口",
+    caps: ["双工"], nocaps: ["审批", "MCP"], install: null, path: "/usr/local/bin/pi",
+    note: "无内建审批与 MCP——审批按静态策略自动应答" },
+];
+const BROKEN = { name: "Codex CLI", status: "err", errText: "路径异常：/usr/local/bin/codex 已失效（brew 迁移后）",
+  install: "brew install codex", path: "/usr/local/bin/codex（不存在）" };
+
+function badgeOf(a) {
+  if (a.status === "ok") return `<span class="badge ok">✓ ${a.ver}</span>`;
+  if (a.status === "miss") return `<span class="badge miss">未安装</span>`;
+  if (a.status === "warn") return `<span class="badge warn">⚠ ${a.warnText}</span>`;
+  return `<span class="badge err">✗ ${a.errText.split("：")[0]}</span>`;
+}
+function capsOf(a) {
+  return a.caps.map(c => `<span class="cap">${c}</span>`).join("") + a.nocaps.map(c => `<span class="cap no">${c}</span>`).join("");
+}
+
+/* ================= 变体 A：首启向导 ================= */
+function renderA() {
+  const rows = AGENTS.map(a => `<div class="agent-row">
+    <div class="head"><span class="name">${a.name}</span>${badgeOf(a)}<span style="margin-left:auto"></span>
+      ${a.status === "ok" || a.status === "warn" ? `<button class="btn small">重新检测</button>` : ""}</div>
+    ${a.path ? `<div style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:3px">${a.path}</div>` : ""}
+    <div class="caps">${capsOf(a)}</div>
+    ${a.note ? `<div style="font-size:12px;color:var(--warn)">${a.note}</div>` : ""}
+    ${a.install ? `<div class="install"><span class="tip">安装后点「重新检测」：</span><div class="cmd-chip">${a.install}<button class="copy">复制</button></div></div>` : ""}
+  </div>`).join("");
+  return `<div class="wizard">
+    <div class="steps"><div class="step on"></div><div class="step on"></div><div class="step on"></div><div class="step"></div></div>
+    <h1>检测你的 agent</h1>
+    <p class="sub">open-cowork 以外部 agent 为运行时。已找到 3 个，还有 1 个未安装——可以先跳过，之后随时在设置里补齐。</p>
+    ${rows}
+    <div class="foot"><button class="btn">← 上一步</button><div><button class="btn">跳过</button> <button class="btn primary">完成，进入 →</button></div></div>
+  </div>`;
+}
+
+/* ================= 变体 B：融入式 ================= */
+function renderB() {
+  const cards = AGENTS.map(a => `<div class="agent-card">
+    <div class="head"><span style="font-weight:600">${a.name}</span>${badgeOf(a)}<span style="margin-left:auto"></span>
+      <button class="btn small">重新检测</button></div>
+    ${a.path ? `<div class="path">${a.path}</div>` : ""}
+    <div class="caps" style="display:flex;gap:6px;margin-top:8px">${capsOf(a)}</div>
+    ${a.note ? `<div style="font-size:12px;color:var(--warn);margin-top:6px">${a.note}</div>` : ""}
+    ${a.install ? `<div class="repair"><div class="row">安装：<div class="cmd-chip" style="flex:1">${a.install}<button class="copy">复制</button></div></div></div>` : ""}
+  </div>`).join("");
+  return `<div class="appb">
+    <div class="sideb">
+      <div style="font-size:13px;font-weight:600;color:var(--ink-2);padding:4px 10px 12px">open-cowork</div>
+      <div class="banner"><b>opencode 未安装</b><br>部分任务类型的 agent 不可用。<br><button class="btn small" onclick="document.getElementById('settings').scrollIntoView()">去设置 →</button></div>
+      <div class="task-b">🔵 添加 ESLint 配置</div><div class="task-b">🟡 重构 auth 模块</div>
+    </div>
+    <div class="mainb"><div class="settings" id="settings">
+      <h2>Agent 管理</h2><p class="s-sub">自动探测已安装的 CLI；异常时可手动修复路径或查看探测日志。</p>
+      ${cards}
+      <div class="agent-card" style="border-color:var(--err)">
+        <div class="head"><span style="font-weight:600">${BROKEN.name}（第二个实例场景）</span><span class="badge err">✗ 路径异常</span></div>
+        <div class="path">${BROKEN.path}</div>
+        <div class="repair">
+          <div class="row">${BROKEN.errText}</div>
+          <div class="row"><input value="/opt/homebrew/bin/codex"><button class="btn small">验证</button><button class="btn small primary">保存路径</button></div>
+          <div class="row"><button class="btn small">重新自动探测</button><button class="btn small">查看探测日志</button></div>
+        </div>
+      </div>
+      <div class="add-custom" onclick="document.querySelector('.custom-form').classList.toggle('open')">＋ 添加自定义 ACP agent…</div>
+      <div class="custom-form">
+        <div class="frow"><label>名称</label><input placeholder="my-agent"></div>
+        <div class="frow"><label>命令</label><input placeholder="npx my-acp-agent"></div>
+        <div class="frow"><label>环境变量</label><input placeholder="KEY=value（逗号分隔）"></div>
+        <div class="frow"><label></label><button class="btn">测试连接</button><button class="btn primary">保存</button></div>
+      </div>
+    </div></div>
+  </div>`;
+}
+
+/* ================= 变体 C：命令面板驱动 ================= */
+function renderC() {
+  const items = [
+    { t: "安装 opencode…", d: "npm install -g opencode-ai（复制并指引）", k: "⏎" },
+    { t: "修复 Codex CLI 路径…", d: "当前指向已失效路径", k: "" },
+    { t: "重新探测全部 agent", d: "", k: "⌘R" },
+    { t: "添加自定义 ACP agent…", d: "", k: "" },
+    { t: "查看 agent 探测日志", d: "", k: "" },
+  ].map((i, idx) => `<div class="pitem ${idx === 0 ? "sel" : ""}"><span>${i.t}</span><span style="font-size:12px;color:var(--ink-3)">${i.d}</span><span class="kbd">${i.k}</span></div>`).join("");
+  const list = AGENTS.map(a => `<div class="c-row"><span class="name">${a.name}</span>${badgeOf(a)}<span style="margin-left:auto;display:flex;gap:6px">${capsOf(a)}</span></div>`).join("");
+  return `<div class="c-settings"><h2 style="font-size:20px;margin-bottom:16px">设置 · Agent</h2>${list}
+    <p style="font-size:12.5px;color:var(--ink-3);margin-top:16px">一切操作走 ⌘K 命令面板</p></div>
+  <div class="palette-mask"><div class="palette">
+    <div class="pin">⌘K <span>agent…</span></div>${items}
+  </div></div>`;
+}
+
+/* ================= 切换 ================= */
+const VARIANTS = { A: "A — 首启向导式", B: "B — 无向导融入式", C: "C — 命令面板驱动" };
+function currentVariant() { return new URLSearchParams(location.search).get("variant") || "A"; }
+function render() {
+  const v = currentVariant();
+  const body = v === "B" ? renderB() : v === "C" ? renderC() : renderA();
+  document.getElementById("root").innerHTML = body + `<div class="switcher">
+    <button onclick="cycle(-1)">←</button><span class="label"><b>${VARIANTS[v]}</b></span><button onclick="cycle(1)">→</button></div>`;
+}
+function cycle(dir) {
+  const keys = Object.keys(VARIANTS);
+  const i = (keys.indexOf(currentVariant()) + dir + keys.length) % keys.length;
+  const p = new URLSearchParams(location.search); p.set("variant", keys[i]);
+  history.replaceState(null, "", "?" + p.toString());
+  render();
+}
+document.addEventListener("keydown", (e) => {
+  if (/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+render();
+</script>
+</body>
+</html>
