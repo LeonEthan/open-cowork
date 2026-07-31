@@ -1,0 +1,283 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { AgentDriver, AgentEvent, DriverStartParams, PermissionDecision } from '../../src/agent/events';
+
+/**
+ * 表驱动 contract 测试套件（ticket #19，测试接缝 1 的消费端）。
+ *
+ * 每个 driver 跑同一组用例（本票只有 claude 一家；#22 codex/opencode、#23 pi
+ * 新增 driver 时只需在本文件底部的 DRIVER_MATRIX 追加一行 + 对应 fake 脚本格式）。
+ *
+ * 用例表（票面要求）：
+ *  1. 会话生命周期：start → session_started → turn_end → done(completed)；
+ *  2. 事件归一：text_delta / thinking_delta / tool_call(running→done|error) /
+ *     permission_request→response / usage / turn_end 每类至少一例；
+ *  3. 取消：运行中 cancel → 进程终止 + turn_end(cancelled) + done(cancelled)；
+ *  4. 异常退出 → failed（含原因）；
+ *  5. 流式分片边界：多分片 text_delta 顺序拼接 = 原文。
+ *
+ * 驱动方式：fake agent harness（tests/fake-agent/）按 JSONL 脚本输出 wire 格式；
+ * driver 以真实 CLI 调用方式 spawn 它（executablePath 注入）。
+ */
+
+/** 被测 driver 的装配描述（每家一行） */
+export interface DriverHarnessEntry {
+  /** driver id（与注册表一致） */
+  id: string;
+  /** 创建 driver 实例 */
+  create: () => AgentDriver;
+  /** 拼装该 driver 的 start 参数（cwd/prompt 由用例给，这里给 wire 格式接线） */
+  makeParams: (scriptPath: string) => Partial<DriverStartParams>;
+}
+
+export interface CollectedEvents {
+  events: AgentEvent[];
+  byType: <T extends AgentEvent['type']>(type: T) => Extract<AgentEvent, { type: T }>[];
+}
+
+export function writeScript(lines: unknown[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'open-cowork-contract-'));
+  const file = join(dir, 'script.jsonl');
+  writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+  return file;
+}
+
+/** 跑一个会话并收集全部归一事件（timeoutMs 兜底防挂死） */
+export async function runSession(
+  entry: DriverHarnessEntry,
+  scriptPath: string,
+  opts: {
+    prompt?: string;
+    permissionDecision?: PermissionDecision;
+    afterStart?: (session: {
+      cancel: () => Promise<void>;
+      sendFollowup: (text: string) => Promise<void>;
+    }) => void;
+    /** 每个归一事件到达时的钩子（可驱动追问/取消，免去裸 sleep） */
+    onEvent?: (
+      event: AgentEvent,
+      session: { cancel: () => Promise<void>; sendFollowup: (text: string) => Promise<void> },
+    ) => void;
+    timeoutMs?: number;
+  } = {},
+): Promise<{ collected: CollectedEvents; end: { reason: string; error?: string } }> {
+  const events: AgentEvent[] = [];
+  const driver = entry.create();
+  const sessionRef: { current: Parameters<NonNullable<typeof opts.onEvent>>[1] | null } = {
+    current: null,
+  };
+  const session = driver.start(
+    {
+      taskId: `contract-${entry.id}`,
+      prompt: opts.prompt ?? '测试需求',
+      cwd: process.cwd(),
+      model: null,
+      ...entry.makeParams(scriptPath),
+      permissionHandler: async () => opts.permissionDecision ?? { behavior: 'allow' },
+    },
+    (e) => {
+      events.push(e);
+      if (sessionRef.current) opts.onEvent?.(e, sessionRef.current);
+    },
+  );
+  sessionRef.current = session;
+  opts.afterStart?.(session);
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const end = await Promise.race([
+    session.done,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`会话超时（${timeoutMs}ms）未结束`)), timeoutMs),
+    ),
+  ]);
+  return {
+    collected: {
+      events,
+      byType: (type) => events.filter((e) => e.type === type) as never,
+    },
+    end,
+  };
+}
+
+/** 共享用例组：entry 由各家测试文件注入 */
+export function defineContractSuite(entry: DriverHarnessEntry): void {
+  describe(`contract: ${entry.id}`, () => {
+    it('会话生命周期：session_started → turn_end(completed) → done(completed)', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '你好' } },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed', result: 'done' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed');
+      const types = collected.events.map((e) => e.type);
+      expect(types[0]).toBe('session_started');
+      expect(types).toContain('turn_end');
+      expect(types.indexOf('session_started')).toBeLessThan(types.indexOf('turn_end'));
+      const started = collected.byType('session_started')[0];
+      expect(started.sessionId).toBeTruthy();
+    });
+
+    it('事件归一：text/thinking/tool_call/usage 全类覆盖', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'thinking', text: '先想一下' } },
+        { action: 'emit', event: { kind: 'text', text: '# 标题\n正文' } },
+        { action: 'emit', event: { kind: 'tool_call', id: 'toolu_1', name: 'Bash', input: { command: 'npm test' } } },
+        { action: 'emit', event: { kind: 'tool_result', id: 'toolu_1', output: 'all green' } },
+        { action: 'emit', event: { kind: 'tool_call', id: 'toolu_2', name: 'Edit', input: { file_path: '/tmp/a.ts' } } },
+        { action: 'emit', event: { kind: 'tool_result', id: 'toolu_2', output: 'boom', isError: true } },
+        {
+          action: 'emit',
+          event: { kind: 'turn_end', status: 'completed', usage: { inputTokens: 11, outputTokens: 22 } },
+        },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed');
+
+      const thinking = collected.byType('thinking_delta').map((e) => e.delta).join('');
+      expect(thinking).toBe('先想一下');
+      const text = collected.byType('text_delta').map((e) => e.delta).join('');
+      expect(text).toBe('# 标题\n正文');
+
+      const calls = collected.byType('tool_call');
+      const bashStart = calls.find((c) => c.call.id === 'toolu_1' && c.call.status === 'running');
+      expect(bashStart?.call.name).toBe('Bash');
+      expect(bashStart?.call.target).toBe('npm test');
+      const bashDone = calls.find((c) => c.call.id === 'toolu_1' && c.call.status === 'done');
+      expect(bashDone?.call.output).toBe('all green');
+      const editErr = calls.find((c) => c.call.id === 'toolu_2' && c.call.status === 'error');
+      expect(editErr?.call.target).toBe('/tmp/a.ts');
+
+      const usage = collected.byType('usage')[0];
+      expect(usage.usage.inputTokens).toBe(11);
+      expect(usage.usage.outputTokens).toBe(22);
+    });
+
+    it('事件归一：permission_request → handler → permission_response（allow 与 deny）', async () => {
+      for (const decision of [
+        { behavior: 'allow' } as PermissionDecision,
+        { behavior: 'deny', message: '太危险' } as PermissionDecision,
+      ]) {
+        const script = writeScript([
+          { action: 'expect_stdin' },
+          {
+            action: 'emit',
+            event: {
+              kind: 'permission_request',
+              id: 'perm_1',
+              toolName: 'Bash',
+              input: { command: 'rm -rf build' },
+              reason: '需要删除构建产物',
+            },
+          },
+          { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+          { action: 'exit', code: 0 },
+        ]);
+        const { collected, end } = await runSession(entry, script, {
+          permissionDecision: decision,
+        });
+        expect(end.reason).toBe('completed');
+        const req = collected.byType('permission_request')[0];
+        expect(req.request.toolName).toBe('Bash');
+        expect(req.request.target).toBe('rm -rf build');
+        expect(req.request.reason).toBe('需要删除构建产物');
+        expect(req.request.options).toContain('allow_always');
+        const res = collected.byType('permission_response')[0];
+        expect(res.requestId).toBe(req.request.id);
+        expect(res.decision.behavior).toBe(decision.behavior);
+        if (decision.behavior === 'deny') expect(res.decision.message).toBe('太危险');
+      }
+    });
+
+    it('取消：运行中 cancel → turn_end(cancelled) + done(cancelled)，进程终止', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '开始长篇输出' } },
+        { action: 'sleep', ms: 60_000 }, // 挂住等待被取消
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script, {
+        onEvent: (event, session) => {
+          // 首批流式事件到达（= 运行中）即取消
+          if (event.type === 'text_delta') void session.cancel();
+        },
+      });
+      expect(end.reason).toBe('cancelled');
+      const turnEnds = collected.byType('turn_end');
+      expect(turnEnds.some((t) => t.status === 'cancelled')).toBe(true);
+    });
+
+    it('异常退出：非零 exit → error(fatal) + turn_end(failed) + done(failed)', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '跑到一半' } },
+        { action: 'exit', code: 1 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('failed');
+      expect(end.error).toBeTruthy();
+      expect(collected.byType('turn_end').some((t) => t.status === 'failed')).toBe(true);
+    });
+
+    it('异常归一：agent 报 error result → turn_end(failed) 带原因', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'error', message: 'API 限流了' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed'); // 进程正常退出；失败语义在轮次上
+      const turnEnd = collected.byType('turn_end')[0];
+      expect(turnEnd.status).toBe('failed');
+      expect(turnEnd.reason).toBeTruthy();
+    });
+
+    it('流式分片边界：多分片 text_delta 顺序拼接 = 原文（含空文本）', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        { action: 'emit', event: { kind: 'text', text: '分片一分片二分片三', chunks: 5 } },
+        { action: 'emit', event: { kind: 'thinking', text: '甲乙丙丁戊', chunks: 4 } },
+        { action: 'emit', event: { kind: 'text', text: '尾段' } },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected } = await runSession(entry, script);
+      const text = collected.byType('text_delta').map((e) => e.delta).join('');
+      expect(text).toBe('分片一分片二分片三尾段');
+      const thinking = collected.byType('thinking_delta').map((e) => e.delta).join('');
+      expect(thinking).toBe('甲乙丙丁戊');
+    });
+
+    it('多轮会话：followup 复用同一会话推进第二轮', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin', match: '第一轮' },
+        { action: 'emit', event: { kind: 'text', text: '第一轮回复' } },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'expect_stdin', match: '第二轮' },
+        { action: 'emit', event: { kind: 'text', text: '第二轮回复' } },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      let followedUp = false;
+      const { collected, end } = await runSession(entry, script, {
+        prompt: '第一轮需求',
+        onEvent: (event, session) => {
+          // 第一轮 turn_end 到达后精确追问一次（事件驱动，无裸 sleep）
+          if (!followedUp && event.type === 'turn_end') {
+            followedUp = true;
+            void session.sendFollowup('第二轮追问');
+          }
+        },
+      });
+      expect(followedUp).toBe(true);
+      expect(end.reason).toBe('completed');
+      expect(collected.byType('turn_end')).toHaveLength(2);
+      const text = collected.byType('text_delta').map((e) => e.delta).join('');
+      expect(text).toBe('第一轮回复第二轮回复');
+    });
+  });
+}

@@ -1,13 +1,16 @@
+import type { AgentDriver } from '../events';
+
 /**
- * Agent driver 注册表（ticket #17 只建空注册表与类型，不放真 driver）。
+ * Agent driver 注册表。
  *
  * ── 如何新增一个 agent driver ──
  * 1. 在本目录新建 <name>.driver.ts；
- * 2. 默认导出一个满足 AgentDriverDefinition 的对象；
- * 3. 完成。无需编辑本文件——import.meta.glob('./ *.driver.ts') 自动收集。
+ * 2. 默认导出一个满足 AgentDriverDefinition 的对象（含 create() 运行时工厂）；
+ * 3. 完成。无需编辑本文件——import.meta.glob('./*.driver.ts') 自动收集。
  *
- * 四家内置 driver（claude-code / codex / opencode / pi）与自定义 ACP agent
- * 由后续「Agent 接入」票据实现；审批链路一律 fail-closed（ARCHITECTURE §10）。
+ * 内置 driver：claude（ticket #19，drivers/claude.driver.ts）；
+ * codex / opencode（#22）、pi（#23，降级审批）后续按同一接口补。
+ * 审批链路一律 fail-closed（ARCHITECTURE §10）。
  */
 
 /** 审批能力（ARCHITECTURE §2：pi 为降级接入，适配层静态策略兜底） */
@@ -18,10 +21,8 @@ export interface AgentDriverDefinition {
   id: string;
   displayName: string;
   approval: ApprovalCapability;
-  /**
-   * 后续票据补充：spawn/session/事件归一（ACP 语义）等接口。
-   * 真实事件流统一经 UsageEvent / 审批事件归一后回传。
-   */
+  /** 运行时工厂：每个会话经 create() 取一个新 driver 实例（无跨会话状态） */
+  create: () => AgentDriver;
 }
 
 const modules = import.meta.glob('./*.driver.ts', { eager: true }) as Record<
@@ -33,10 +34,15 @@ export function listDrivers(): AgentDriverDefinition[] {
   return Object.entries(modules)
     .sort(([a], [b]) => a.localeCompare(b))
     .flatMap(([path, mod]) => {
-      if (!mod.default?.id) {
-        console.warn(`[drivers] ${path} 缺少默认导出 AgentDriverDefinition，已跳过`);
+      if (!mod.default?.id || typeof mod.default.create !== 'function') {
+        console.warn(`[drivers] ${path} 缺少默认导出 AgentDriverDefinition（含 create），已跳过`);
         return [];
       }
       return [mod.default];
     });
+}
+
+/** 按 id 取 driver 定义（不存在返回 null，调用方负责提示「agent 未接入」） */
+export function getDriverDefinition(id: string): AgentDriverDefinition | null {
+  return listDrivers().find((d) => d.id === id) ?? null;
 }

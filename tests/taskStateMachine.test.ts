@@ -26,6 +26,7 @@ const LEGAL: ReadonlyArray<readonly [TaskStatus, TaskStatus]> = [
   ['awaiting_approval', 'running'], // ⇄ 回程
   ['running', 'awaiting_review'],
   ['awaiting_approval', 'awaiting_review'],
+  ['awaiting_review', 'running'], // #19 additive：追问继续（US#12）
   ['awaiting_review', 'done'],
   // 活跃态 → failed / cancelled
   ['ready', 'failed'],
@@ -75,6 +76,9 @@ describe('taskStateMachine', () => {
     expect(canTransition('ready', 'done')).toBe(false);
     expect(canTransition('ready', 'awaiting_approval')).toBe(false);
     expect(canTransition('ready', 'awaiting_review')).toBe(false);
+    // awaiting_review 仅可回 running（追问）或入 done；不可回 awaiting_approval
+    expect(canTransition('awaiting_review', 'awaiting_approval')).toBe(false);
+    expect(canTransition('awaiting_review', 'ready')).toBe(false);
     // failed 仅可回 ready（重试），不可直达其他态
     expect(canTransition('failed', 'running')).toBe(false);
     expect(canTransition('failed', 'done')).toBe(false);

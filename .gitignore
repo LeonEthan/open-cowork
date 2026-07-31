@@ -13,3 +13,6 @@ test-results/
 
 # worktree 内 node_modules 为符号链接（尾部斜杠模式只匹配目录，漏匹配链接）
 /node_modules
+
+# 票据开发期的临时 smoke/debug 脚本（不进门禁、不提交）
+/.scratch/
