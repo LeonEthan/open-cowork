@@ -131,11 +131,13 @@ export function createApprovalService(deps: ApprovalServiceDeps): ApprovalServic
 
     const decision: PermissionDecision = {
       behavior: input.decision.behavior,
-      // 降级 driver 可能不给 allow_always 选项——钳制，不给就不记忆（防御）
-      always:
-        input.decision.behavior === 'allow' &&
-        Boolean(input.decision.always) &&
-        entry.request.options.includes('allow_always'),
+      // 降级 driver 可能不给 allow_always 选项——钳制，不给就不记忆（防御）；
+      // deny 决议不带 always 字段（形状干净，driver 只读 message）
+      ...(input.decision.behavior === 'allow'
+        ? {
+            always: Boolean(input.decision.always) && entry.request.options.includes('allow_always'),
+          }
+        : {}),
       ...(input.decision.message ? { message: input.decision.message } : {}),
     };
 
