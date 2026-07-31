@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. ticket #8 权限审批流交互设计
+  三个变体的审批流，宿主于 Typora 式会话文档流 mock，底部浮条或 ←/→ 切换，?variant=A|B|C
+  A — 行内卡片：审批请求插在文档流中工具调用的位置
+  B — 底部托盘：文档流保持干净，审批排队收进输入区上方托盘（键盘优先）
+  C — 右侧审批栏：独立右栏排队审批，文档流只留状态点
+  运行：open prototype/approval-flow.html
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>prototype: 审批流 — open-cowork</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #fafafa; --bg-sunk: #f4f4f5;
+    --ink: #27272a; --ink-2: #52525b; --ink-3: #a1a1aa; --ink-4: #d4d4d8;
+    --line: #e4e4e7; --accent: #2563eb; --accent-soft: #eff6ff;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --r-sm: 8px; --r-md: 12px; --r-pill: 9999px;
+    --font: -apple-system, "SF Pro Text", "Inter", "PingFang SC", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); color: var(--ink); background: var(--bg); font-size: 15px; line-height: 1.7; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ============ 共用骨架 ============ */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+  .sidebar { width: 232px; flex-shrink: 0; border-right: 1px solid var(--line); background: var(--bg-soft); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .sidebar .brand { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 6px 10px 14px; letter-spacing: .02em; }
+  .task { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink-2); }
+  .task.active { background: var(--bg-sunk); color: var(--ink); font-weight: 500; }
+  .task .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot.running { background: var(--accent); animation: pulse 1.6s infinite; }
+  .dot.waiting { background: var(--warn); animation: pulse 1.2s infinite; }
+  .dot.done { background: var(--ink-4); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .task .meta { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .doc-scroll { flex: 1; overflow-y: auto; }
+  .doc { max-width: 720px; margin: 0 auto; padding: 48px 40px 24px; }
+
+  /* Typora 式文档排版 */
+  .msg-user { color: var(--ink-2); font-size: 14.5px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 28px; }
+  h3.agent-name { font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
+  .doc p { margin-bottom: 14px; }
+  .doc code { font-family: var(--mono); font-size: 13px; background: var(--bg-sunk); border-radius: 5px; padding: 1.5px 5px; }
+  .doc pre { font-family: var(--mono); font-size: 13px; line-height: 1.6; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px 16px; margin-bottom: 16px; overflow-x: auto; }
+
+  /* 工具调用块（行内呈现，三变体共用基础样式） */
+  .tool { border: 1px solid var(--line); border-radius: var(--r-md); margin: 18px 0; overflow: hidden; background: var(--bg); }
+  .tool-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px; color: var(--ink-2); }
+  .tool-head .icon { font-size: 14px; }
+  .tool-head .name { font-family: var(--mono); font-weight: 600; color: var(--ink); font-size: 12.5px; }
+  .tool-head .status { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+  .tool-head .status.waiting { color: var(--warn); }
+  .tool-head .status.ok { color: var(--ok); }
+  .tool-head .status.denied { color: var(--err); }
+  .tool-body { border-top: 1px solid var(--line); background: var(--bg-soft); padding: 12px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.65; }
+  .diff-add { color: var(--ok); } .diff-del { color: var(--err); } .diff-ctx { color: var(--ink-3); }
+
+  /* 审批按钮组（共用） */
+  .appr-actions { display: flex; gap: 8px; align-items: center; }
+  .btn { border: 1px solid var(--line); background: var(--bg); border-radius: var(--r-sm); padding: 6px 14px; font-size: 13px; color: var(--ink-2); transition: all .12s; }
+  .btn:hover { border-color: var(--ink-3); color: var(--ink); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .btn.primary:hover { background: #000; }
+  .btn.danger:hover { border-color: var(--err); color: var(--err); }
+  .btn kbd { font-family: var(--mono); font-size: 11px; opacity: .55; margin-left: 6px; }
+  .deny-reason { width: 100%; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; font-size: 13px; font-family: inherit; resize: none; }
+  .deny-reason:focus { outline: 1px solid var(--ink-3); }
+
+  /* 输入区 */
+  .inputbar { border-top: 1px solid var(--line); padding: 14px 24px 18px; background: var(--bg); }
+  .inputbox { max-width: 720px; margin: 0 auto; border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 16px; color: var(--ink-3); font-size: 14px; display: flex; align-items: center; gap: 10px; }
+  .inputbox .agent-chip { font-size: 11.5px; background: var(--bg-sunk); border-radius: var(--r-pill); padding: 2px 10px; color: var(--ink-2); }
+
+  /* 决策记录（状态外化，三变体共用） */
+  .state-log { position: fixed; top: 14px; right: 14px; width: 250px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 14px; font-size: 12px; z-index: 40; }
+  .state-log h4 { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  .state-log .row { display: flex; gap: 6px; padding: 2.5px 0; color: var(--ink-2); font-family: var(--mono); font-size: 11.5px; }
+  .state-log .row .v-allow { color: var(--ok); } .state-log .row .v-always { color: var(--accent); } .state-log .row .v-deny { color: var(--err); }
+  .state-log .taskstate { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11.5px; }
+  .state-log .taskstate b { color: var(--warn); font-weight: 600; }
+
+  /* ============ 变体 A：行内卡片 ============ */
+  .appr-inline { border-top: 1px dashed var(--line); padding: 14px 16px; background: var(--accent-soft); }
+  .appr-inline .ask { font-size: 13px; color: var(--ink-2); margin-bottom: 10px; }
+  .appr-inline .ask b { color: var(--ink); }
+  .tool.pending-a { border-color: var(--warn); }
+  .tool.pending-a .tool-head { background: #fffbeb; }
+
+  /* ============ 变体 B：底部托盘 ============ */
+  .tool.queued-b .tool-body { display: none; }
+  .dock { border-top: 1px solid var(--line); background: var(--bg-soft); padding: 12px 24px 4px; }
+  .dock-inner { max-width: 720px; margin: 0 auto; }
+  .dock-title { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .dock-title .count { background: var(--warn); color: #fff; border-radius: var(--r-pill); font-size: 10.5px; padding: 1px 8px; }
+  .dock-card { background: var(--bg); border: 1px solid var(--warn); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 8px; }
+  .dock-card .cmd { font-family: var(--mono); font-size: 12.5px; background: var(--bg-sunk); border-radius: 6px; padding: 6px 10px; margin: 8px 0 10px; }
+  .dock-queue { display: flex; gap: 6px; margin-bottom: 10px; }
+  .dock-queue .q { font-size: 11.5px; color: var(--ink-3); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 2px 10px; background: var(--bg); }
+  .dock-empty { font-size: 12.5px; color: var(--ink-3); padding: 4px 0 10px; }
+
+  /* ============ 变体 C：右侧审批栏 ============ */
+  .main.with-lane { flex-direction: row; }
+  .main.with-lane .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .lane { width: 340px; flex-shrink: 0; border-left: 1px solid var(--line); background: var(--bg-soft); display: flex; flex-direction: column; }
+  .lane-head { padding: 16px 18px 10px; font-size: 12px; font-weight: 600; color: var(--ink-2); letter-spacing: .05em; display: flex; align-items: center; gap: 8px; }
+  .lane-head .count { background: var(--warn); color: #fff; border-radius: var(--r-pill); font-size: 10.5px; padding: 1px 8px; }
+  .lane-scroll { flex: 1; overflow-y: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .lane-card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; }
+  .lane-card.current { border-color: var(--warn); }
+  .lane-card .cmd { font-family: var(--mono); font-size: 12px; background: var(--bg-sunk); border-radius: 6px; padding: 6px 10px; margin: 8px 0 10px; word-break: break-all; }
+  .lane-card.resolved { opacity: .5; }
+  .lane-empty { font-size: 12.5px; color: var(--ink-3); padding: 8px 18px; }
+  .tool.minimal-c { border: none; background: transparent; margin: 10px 0; }
+  .tool.minimal-c .tool-head { padding: 4px 0; border: none; }
+  .tool.minimal-c .tool-body { display: none; }
+
+  /* ============ 底部切换浮条 ============ */
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #18181b; color: #fafafa; border-radius: var(--r-pill); padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.28); z-index: 50; font-size: 13px; }
+  .switcher button { background: none; border: none; color: #a1a1aa; font-size: 15px; padding: 4px 10px; border-radius: var(--r-pill); }
+  .switcher button:hover { color: #fff; background: #27272a; }
+  .switcher .label { padding: 0 10px; font-size: 12.5px; color: #d4d4d8; min-width: 190px; text-align: center; }
+  .switcher .label b { color: #fff; }
+  .replay { position: fixed; bottom: 18px; right: 18px; z-index: 50; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 7px 16px; font-size: 12.5px; color: var(--ink-2); }
+  .replay:hover { border-color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ================= mock 数据 ================= */
+const TASKS = [
+  { name: "添加 ESLint 配置", agent: "claude · glm-4.6", state: "waiting" },
+  { name: "重构 auth 模块", agent: "codex · gpt-5", state: "running" },
+  { name: "写 README 英文版", agent: "opencode · kimi-k2", state: "done" },
+];
+const USER_MSG = "帮我给项目加上 ESLint 配置，装依赖，然后把现有的 lint 错误修掉。";
+const AGENT_TEXT_1 = "好的，我的计划是：先创建 <code>.eslintrc.json</code>（推荐规则集 + 两个项目定制规则），然后安装依赖，最后跑 <code>--fix</code> 自动修复。有三处操作需要你批准：";
+
+/* 四个审批请求（第四个网络请求稍后到达，制造并发排队） */
+const REQUESTS = [
+  { id: "r1", tool: "WriteFile", icon: "📝", target: ".eslintrc.json",
+    reason: "创建新文件", kind: "diff",
+    body: `<span class="diff-ctx">@@ 新文件 @@</span>\n<span class="diff-add">+ {</span>\n<span class="diff-add">+   "extends": "eslint:recommended",</span>\n<span class="diff-add">+   "rules": {</span>\n<span class="diff-add">+     "no-console": "warn",</span>\n<span class="diff-add">+     "eqeqeq": "error"</span>\n<span class="diff-add">+   }</span>\n<span class="diff-add">+ }</span>` },
+  { id: "r2", tool: "Bash", icon: "⌨️", target: "npm install -D eslint", reason: "安装开发依赖", kind: "cmd",
+    body: "npm install -D eslint" },
+  { id: "r3", tool: "Bash", icon: "⌨️", target: "npx eslint . --fix", reason: "执行自动修复（会修改 17 个文件）", kind: "cmd",
+    body: "npx eslint . --fix" },
+  { id: "r4", tool: "WebFetch", icon: "🌐", target: "https://eslint.org/docs/latest/rules", reason: "联网查询规则文档", kind: "cmd",
+    body: "GET https://eslint.org/docs/latest/rules" },
+];
+
+/* ================= 全局状态 ================= */
+let S; // { decisions: {id: 'allow'|'always'|'deny'}, denyReason: {}, taskState: 'awaiting_approval'|'running', denyOpen: null }
+function freshState() { return { decisions: {}, taskState: "awaiting_approval" }; }
+function decided(id) { return S.decisions[id]; }
+function pendingIds() { return REQUESTS.map(r => r.id).filter(id => !decided(id)); }
+function currentVariant() { return new URLSearchParams(location.search).get("variant") || "A"; }
+
+function decide(id, v) {
+  S.decisions[id] = v;
+  if (pendingIds().length === 0) S.taskState = "running";
+  render();
+}
+function replay() { S = freshState(); render(); }
+
+/* ================= 共用片段 ================= */
+const h = (html) => html;
+function sidebarHTML() {
+  return `<div class="sidebar"><div class="brand">open-cowork</div>` +
+    TASKS.map((t, i) => {
+      const st = i === 0 ? S.taskState : t.state;
+      const dot = st === "awaiting_approval" ? "waiting" : st === "running" ? "running" : "done";
+      const meta = st === "awaiting_approval" ? `${pendingIds().length} 待批` : st === "running" ? "运行中" : "";
+      return `<div class="task ${i === 0 ? "active" : ""}"><span class="dot ${dot}"></span>${t.name}<span class="meta">${meta}</span></div>`;
+    }).join("") + `</div>`;
+}
+function docHeadHTML() {
+  return `<div class="doc">
+    <div class="msg-user">${USER_MSG}</div>
+    <h3 class="agent-name">Claude · glm-4.6</h3>
+    <p>${AGENT_TEXT_1}</p>`;
+}
+function toolStatusText(id) {
+  const d = decided(id);
+  if (!d) return `<span class="status waiting">等待审批…</span>`;
+  if (d === "deny") return `<span class="status denied">已拒绝</span>`;
+  return `<span class="status ok">已批准${d === "always" ? "（总是）" : ""} · 已完成</span>`;
+}
+function stateLogHTML() {
+  const rows = REQUESTS.map(r => {
+    const d = decided(r.id);
+    const label = r.tool === "Bash" ? "Bash" : r.tool;
+    const val = d ? `<span class="v-${d === "deny" ? "deny" : d}">${d}</span>` : `<span style="color:var(--ink-3)">pending</span>`;
+    return `<div class="row"><span>${label} ${r.id}</span><span style="margin-left:auto">${val}</span></div>`;
+  }).join("");
+  return `<div class="state-log"><h4>决策状态</h4>${rows}
+    <div class="taskstate">Task 状态：<b>${S.taskState === "awaiting_approval" ? "awaiting_approval" : "running"}</b></div></div>`;
+}
+function inputbarHTML() {
+  return `<div class="inputbar"><div class="inputbox"><span class="agent-chip">claude · glm-4.6</span> 输入消息，或继续指导 agent…</div></div>`;
+}
+function actionsHTML(id, compact) {
+  const d = decided(id);
+  if (d) return "";
+  const k = compact ? `<kbd>⌘1</kbd>` : "";
+  return `<div class="appr-actions">
+    <button class="btn primary" onclick="decide('${id}','allow')">允许一次${k}</button>
+    <button class="btn" onclick="decide('${id}','always')">总是允许${compact ? "<kbd>⌘2</kbd>" : ""}</button>
+    <button class="btn danger" onclick="decide('${id}','deny')">拒绝${compact ? "<kbd>⌘3</kbd>" : ""}</button>
+  </div>`;
+}
+
+/* ================= 变体 A：行内卡片 ================= */
+function renderA() {
+  const tools = REQUESTS.map(r => {
+    const pend = !decided(r.id);
+    return `<div class="tool ${pend ? "pending-a" : ""}">
+      <div class="tool-head"><span class="icon">${r.icon}</span><span class="name">${r.tool}</span>
+        <span style="color:var(--ink-3)">${r.target}</span>${toolStatusText(r.id)}</div>
+      <div class="tool-body">${r.body.replace(/\n/g, "<br>")}</div>
+      ${pend ? `<div class="appr-inline"><div class="ask">agent 请求<b>${r.reason}</b>——是否允许？</div>${actionsHTML(r.id)}</div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="app">${sidebarHTML()}
+    <div class="main"><div class="doc-scroll">${docHeadHTML()}${tools}
+      <p style="color:var(--ink-3);font-size:13.5px">…等待你的批准后继续…</p></div></div>
+    ${inputbarHTML()}</div></div>${stateLogHTML()}`;
+}
+
+/* ================= 变体 B：底部托盘 ================= */
+function renderB() {
+  const tools = REQUESTS.map(r => `<div class="tool queued-b">
+      <div class="tool-head"><span class="icon">${r.icon}</span><span class="name">${r.tool}</span>
+        <span style="color:var(--ink-3)">${r.target}</span>${toolStatusText(r.id)}</div></div>`).join("");
+  const pend = pendingIds();
+  const cur = pend[0];
+  const curR = REQUESTS.find(r => r.id === cur);
+  const dock = pend.length === 0
+    ? `<div class="dock-empty">审批队列已清空 — agent 继续运行中</div>`
+    : `<div class="dock-title">待审批 <span class="count">${pend.length}</span> <span style="text-transform:none;letter-spacing:0">⌘1 允许 · ⌘2 总是 · ⌘3 拒绝</span></div>
+       <div class="dock-card">
+         <div style="font-size:13px;color:var(--ink-2)"><b>${curR.icon} ${curR.tool}</b> · ${curR.reason}</div>
+         <div class="cmd">${curR.kind === "diff" ? "（新文件 .eslintrc.json，8 行）" : curR.body}</div>
+         ${actionsHTML(cur, true)}
+       </div>
+       <div class="dock-queue">${pend.slice(1).map(id => { const r = REQUESTS.find(x => x.id === id); return `<span class="q">下一条：${r.icon} ${r.tool} · ${r.reason}</span>`; }).join("")}</div>`;
+  return `<div class="app">${sidebarHTML()}
+    <div class="main"><div class="doc-scroll">${docHeadHTML()}${tools}</div></div>
+    <div class="dock"><div class="dock-inner">${dock}</div></div>${inputbarHTML()}</div></div>${stateLogHTML()}`;
+}
+
+/* ================= 变体 C：右侧审批栏 ================= */
+function renderC() {
+  const tools = REQUESTS.map(r => `<div class="tool minimal-c">
+      <div class="tool-head"><span class="icon">${r.icon}</span><span class="name">${r.tool}</span>
+        <span style="color:var(--ink-3)">${r.target}</span>${toolStatusText(r.id)}</div></div>`).join("");
+  const pend = pendingIds();
+  const laneCards = REQUESTS.map((r) => {
+    const d = decided(r.id);
+    const isCur = r.id === pend[0];
+    return `<div class="lane-card ${isCur ? "current" : ""} ${d ? "resolved" : ""}">
+      <div style="font-size:12.5px;color:var(--ink-2)"><b>${r.icon} ${r.tool}</b> · ${r.reason} ${d ? "· 已" + (d === "deny" ? "拒绝" : "批准") : ""}</div>
+      ${!d ? `<div class="cmd">${r.kind === "diff" ? "（新文件 .eslintrc.json，8 行 diff）" : r.body}</div>${actionsHTML(r.id)}` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="app">${sidebarHTML()}
+    <div class="main with-lane">
+      <div class="center"><div class="doc-scroll">${docHeadHTML()}${tools}</div></div>${inputbarHTML()}</div>
+      <div class="lane"><div class="lane-head">审批队列 <span class="count">${pend.length}</span></div>
+        <div class="lane-scroll">${pend.length ? laneCards : `<div class="lane-empty">队列已清空 — agent 继续运行中</div>`}</div>
+      </div>
+    </div></div>${stateLogHTML()}`;
+}
+
+/* ================= 变体 D：组合定稿版（C 极简文档行 + B 底部托盘 + 三档模式 + 模式化「总是允许」） ================= */
+function patternOf(r) {
+  if (r.tool === "Bash") return `Bash: ${r.target.split(" ")[0]} *`;
+  if (r.tool === "WriteFile") return `WriteFile: ${r.target}`;
+  return `${r.tool}: ${r.target.replace(/https?:\/\/([^/]+).*/, "$1/*")}`;
+}
+function actionsD(id) {
+  const r = REQUESTS.find(x => x.id === id);
+  if (decided(id)) return "";
+  if (S.denyOpen === id) {
+    return `<div style="margin-top:8px">
+      <textarea class="deny-reason" id="deny-input" rows="2" placeholder="拒绝理由（可选，会作为反馈发给 agent）…"></textarea>
+      <div class="appr-actions" style="margin-top:8px">
+        <button class="btn danger" onclick="decide('${id}','deny')">确认拒绝</button>
+        <button class="btn" onclick="S.denyOpen=null;render()">返回</button>
+      </div></div>`;
+  }
+  return `<div class="appr-actions">
+    <button class="btn primary" onclick="decide('${id}','allow')">允许一次<kbd>⌘1</kbd></button>
+    <button class="btn" onclick="decide('${id}','always')">总是允许「${patternOf(r)}」<kbd>⌘2</kbd></button>
+    <button class="btn danger" onclick="S.denyOpen='${id}';render()">拒绝<kbd>⌘3</kbd></button>
+  </div>`;
+}
+function renderD() {
+  const tools = REQUESTS.map(r => `<div class="tool minimal-c">
+      <div class="tool-head"><span class="icon">${r.icon}</span><span class="name">${r.tool}</span>
+        <span style="color:var(--ink-3)">${r.target}</span>${toolStatusText(r.id)}</div></div>`).join("");
+  const pend = pendingIds();
+  const cur = pend[0];
+  const curR = REQUESTS.find(r => r.id === cur);
+  const dock = pend.length === 0
+    ? `<div class="dock-empty">审批队列已清空 — agent 继续运行中</div>`
+    : `<div class="dock-title">待审批 <span class="count">${pend.length}</span> <span style="text-transform:none;letter-spacing:0">⌘1 允许 · ⌘2 总是 · ⌘3 拒绝</span></div>
+       <div class="dock-card">
+         <div style="font-size:13px;color:var(--ink-2)"><b>${curR.icon} ${curR.tool}</b> · ${curR.reason}</div>
+         <div class="cmd">${curR.kind === "diff" ? "（新文件 .eslintrc.json，8 行）" : curR.body}</div>
+         ${actionsD(cur)}
+       </div>
+       <div class="dock-queue">${pend.slice(1).map(id => { const r = REQUESTS.find(x => x.id === id); return `<span class="q">下一条：${r.icon} ${r.tool} · ${r.reason}</span>`; }).join("")}</div>`;
+  const inputD = `<div class="inputbar"><div class="inputbox">
+      <span class="agent-chip">claude · glm-4.6</span> 输入消息，或继续指导 agent…
+      <span style="margin-left:auto"></span>
+      <span class="agent-chip" title="权限档位：只读 / 自动 / 完全放权">⚙ 自动 ▾</span></div></div>`;
+  return `<div class="app">${sidebarHTML()}
+    <div class="main"><div class="doc-scroll">${docHeadHTML()}${tools}
+      <p style="color:var(--ink-3);font-size:13.5px">…等待你的批准后继续…</p></div></div>
+    <div class="dock"><div class="dock-inner">${dock}</div></div>${inputD}</div></div>${stateLogHTML()}`;
+}
+
+/* ================= 切换与渲染 ================= */
+const VARIANTS = { A: "A — 行内卡片", B: "B — 底部托盘", C: "C — 右侧审批栏", D: "D — 组合定稿版" };
+function render() {
+  const v = currentVariant();
+  const body = v === "B" ? renderB() : v === "C" ? renderC() : v === "D" ? renderD() : renderA();
+  document.getElementById("root").innerHTML = body + switcherHTML(v);
+}
+function switcherHTML(v) {
+  return `<div class="switcher">
+    <button onclick="cycle(-1)">←</button>
+    <span class="label"><b>${VARIANTS[v]}</b></span>
+    <button onclick="cycle(1)">→</button>
+  </div><button class="replay" onclick="replay()">↺ 重播审批场景</button>`;
+}
+function cycle(dir) {
+  const keys = Object.keys(VARIANTS);
+  const i = (keys.indexOf(currentVariant()) + dir + keys.length) % keys.length;
+  const p = new URLSearchParams(location.search); p.set("variant", keys[i]);
+  history.replaceState(null, "", "?" + p.toString());
+  render();
+}
+document.addEventListener("keydown", (e) => {
+  if (/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+  /* 变体 B/D 的键盘审批 */
+  if ((currentVariant() === "B" || currentVariant() === "D") && (e.metaKey || e.ctrlKey)) {
+    const cur = pendingIds()[0];
+    if (!cur) return;
+    if (e.key === "1") decide(cur, "allow");
+    if (e.key === "2") decide(cur, "always");
+    if (e.key === "3") { if (currentVariant() === "D") { S.denyOpen = cur; render(); } else decide(cur, "deny"); }
+  }
+});
+S = freshState(); render();
+</script>
+</body>
+</html>
