@@ -1,0 +1,16 @@
+# 打包配置最小骨架（ticket #17）：不接 updater，不跑签名；分发策略属 PRD §9 延期项。
+appId: com.open-cowork.app
+productName: open-cowork
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+# 原生模块（better-sqlite3/node-pty）在 postinstall 已按当前 electron 版本重编译，
+# 打包时不重复 rebuild。
+npmRebuild: false
+asarUnpack:
+  - node_modules/**/*.node
+mac:
+  category: public.app-category.developer-tools
+  target: dir

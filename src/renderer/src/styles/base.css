@@ -1,0 +1,47 @@
+/* 基础样式：排版基准（DESIGN.md §3）。零阴影——本文件与任何组件都不得出现 box-shadow。 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 聚焦仅边框变深，无光晕（§4 输入区规则的精神适用于全部交互件） */
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
