@@ -17,6 +17,15 @@ export function App(): React.JSX.Element {
     void refreshAll();
   }, [refreshAll]);
 
+  // ticket #19：main 侧任务行变更（状态机迁移/session_id/fail_reason）广播 → 重拉快照
+  useEffect(() => {
+    const api = window.openCowork;
+    if (!api) return;
+    return api.onTasksChanged(() => {
+      void refreshAll();
+    });
+  }, [refreshAll]);
+
   return (
     <div className="app">
       <TopBar />

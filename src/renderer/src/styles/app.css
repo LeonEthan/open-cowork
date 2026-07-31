@@ -406,3 +406,272 @@ button:disabled {
   min-height: 0;
 }
 /* ── ticket #28 end ────────────────────────────────────── */
+
+/* ── ticket #19：会话文档流 ─────────────────────────────
+   全部引用 token；零阴影；动效只用 §5 三类（状态点 pulse / slide ≤220ms / 光标 blink） */
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 0 32px;
+}
+
+/* 用户消息：bg-soft 底 + 边框的轻包裹（文档流中区分说话人，不靠颜色） */
+.msg-user {
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-size: 15px;
+}
+
+/* markdown 排版（§3：基准 16px/1.6；标题 24px/650 仅限 doc-title，文内标题收敛） */
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre,
+.md table {
+  margin: 0 0 12px;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 20px 0 8px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 20px;
+}
+.md h2 {
+  font-size: 18px;
+}
+.md h3,
+.md h4 {
+  font-size: 16px;
+}
+.md a {
+  color: var(--accent);
+}
+.md blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  color: var(--ink-2);
+}
+.md ul,
+.md ol {
+  padding-left: 24px;
+}
+.md table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+}
+.md th {
+  background: var(--bg-soft);
+}
+
+/* 代码块（§4：bg-soft 底 + 1px 边框 + 8px 圆角；高亮四色见 lib/shiki.ts） */
+.code-block {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.code-block pre {
+  margin: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 0 4px;
+}
+
+/* 流式光标（§5 允许的 blink，1s steps） */
+.stream-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: stream-blink 1s steps(1) infinite;
+}
+@keyframes stream-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 思考过程（§4：左边线 + 折叠，摘要一行小字；默认折叠） */
+.thinking {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.thinking summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-2);
+  user-select: none;
+}
+.thinking-body {
+  margin-top: 6px;
+}
+
+/* 工具调用极简行（§4：icon + 名称 + 目标 + 状态，禁止大卡片） */
+.tool-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+  min-width: 0;
+}
+.tool-icon {
+  flex: none;
+  font-size: 11px;
+}
+.tool-icon.running {
+  color: var(--accent);
+  animation: status-pulse 1.4s ease-in-out infinite; /* §5 状态点 pulse */
+}
+.tool-icon.done {
+  color: var(--success);
+}
+.tool-icon.error {
+  color: var(--danger);
+}
+.tool-name {
+  flex: none;
+  font-weight: 650;
+  color: var(--ink);
+}
+.tool-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tool-status {
+  flex: none;
+  font-size: 12px;
+}
+.tool-status.running {
+  color: var(--accent);
+}
+.tool-status.done {
+  color: var(--success);
+}
+.tool-status.error {
+  color: var(--danger);
+}
+
+/* 错误条目（语义红，§2 白名单） */
+.msg-error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--danger);
+}
+
+/* failed 横幅：边框分层（零阴影），原因 + 重试 */
+.failed-banner {
+  margin: 0 0 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-1);
+}
+.failed-reason {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--danger);
+}
+.failed-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 输入区（§4：单圆角框，内嵌 chip 与发送键；聚焦仅边框变深，无光晕） */
+.composer {
+  margin-top: 8px;
+}
+.composer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.composer-box:focus-within {
+  border-color: var(--ink-3);
+}
+.composer-chips {
+  display: flex;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.composer-input {
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  resize: vertical;
+  min-height: 40px;
+}
+.composer-input:focus {
+  outline: none;
+}
+.composer-input::placeholder {
+  color: var(--ink-3);
+}
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+/* ── ticket #19 end ────────────────────────────────────── */
+

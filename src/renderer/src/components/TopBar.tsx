@@ -12,7 +12,6 @@ export function TopBar(): React.JSX.Element {
   const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
   const utilityPong = useUiStore((s) => s.utilityPong);
-  const utilityTick = useUiStore((s) => s.utilityTick);
 
   const resolvedDark =
     themeMode === 'dark' ||
@@ -33,9 +32,7 @@ export function TopBar(): React.JSX.Element {
       <span className="brand">open-cowork</span>
       <span className="spacer" />
       <span className="utility-status" data-testid="utility-status">
-        {utilityPong
-          ? `utility ⇄ renderer · pong${utilityTick !== null ? ` · tick ${utilityTick}` : ''}`
-          : 'utility: connecting…'}
+        {utilityPong ? 'utility ⇄ renderer · pong' : 'utility: connecting…'}
       </span>
       <button
         type="button"

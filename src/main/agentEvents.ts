@@ -23,6 +23,23 @@ export interface AgentEventDispatchContext {
   broadcastTasksChanged: () => void;
 }
 
+/**
+ * 两级清理的持久化侧（ARCHITECTURE §7 可恢复）：把「进行中」状态的任务标 failed。
+ * 调用时机：app 启动（上次异常退出残留）与 utility 进程崩溃时。
+ * 迁移仍经 taskRepo.updateStatus（状态机把关）；伴随关闭其 running Turn。
+ */
+export function recoverInterruptedTasks(db: Database, reason: string): number {
+  const rows = db
+    .prepare("SELECT id FROM tasks WHERE status IN ('running', 'awaiting_approval')")
+    .all() as { id: string }[];
+  for (const { id } of rows) {
+    const turn = conversationRepo.getRunningTurn(db, id);
+    if (turn) conversationRepo.closeTurn(db, turn.id, 'failed');
+    taskRepo.updateStatus(db, id, 'failed', Date.now(), reason);
+  }
+  return rows.length;
+}
+
 /** 流式段落的内存缓冲（per task；高频 delta 合流后节流落库） */
 interface StreamBuffer {
   kind: 'text' | 'thinking' | null;

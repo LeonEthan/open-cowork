@@ -13,9 +13,8 @@ interface UiState {
   /** 检查栏当前 tab id（来自扩展注册表） */
   activeInspectorTab: string | null;
   view: MainView;
-  /** utility 直连 demo 状态（MessageChannel ping-pong + 流式计数） */
+  /** utility 直连活性（MessageChannel ping-pong） */
   utilityPong: boolean;
-  utilityTick: number | null;
 
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
@@ -23,7 +22,6 @@ interface UiState {
   setActiveInspectorTab: (id: string) => void;
   setView: (view: MainView) => void;
   setUtilityPong: (pong: boolean) => void;
-  setUtilityTick: (tick: number) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -35,7 +33,6 @@ export const useUiStore = create<UiState>()(
       activeInspectorTab: null,
       view: 'document',
       utilityPong: false,
-      utilityTick: null,
 
       setThemeMode: (themeMode) => set({ themeMode }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -43,7 +40,6 @@ export const useUiStore = create<UiState>()(
       setActiveInspectorTab: (activeInspectorTab) => set({ activeInspectorTab }),
       setView: (view) => set({ view }),
       setUtilityPong: (utilityPong) => set({ utilityPong }),
-      setUtilityTick: (utilityTick) => set({ utilityTick }),
     }),
     {
       name: 'open-cowork:ui',

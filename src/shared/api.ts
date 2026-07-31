@@ -3,7 +3,7 @@
  * renderer 侧通过 window.openCowork 访问；类型声明见 src/renderer/src/env.d.ts。
  */
 // ticket #18：DTO 复用十实体类型（entities.ts 为纯类型文件，type-only import 无运行时依赖）
-import type { Task, TaskStatus, Workspace } from '../main/db/entities';
+import type { Message, Task, TaskStatus, ToolCall, Turn, Workspace } from '../main/db/entities';
 
 export interface OpenCoworkApi {
   /** 请求建立 renderer ⇄ utility 的 MessageChannel 直连；port 经 window 'message' 事件送达 */
@@ -16,6 +16,11 @@ export interface OpenCoworkApi {
   // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
   workspaces: WorkspaceApi;
   tasks: TaskApi;
+  /** 任务行变更推送（main 广播 tasks:changed）；返回取消订阅函数 */
+  onTasksChanged: (cb: () => void) => () => void;
+
+  // ── ticket #19：agent 会话控制与历史 ─────────────────────────
+  agent: AgentApi;
 
   // ── ticket #28: 内置终端 tab ─────────────────────────────────────────
   /** 创建（或复用）per-task 终端会话；key=taskId 或 'global'；懒启动——首次调用才起 shell */
@@ -66,4 +71,24 @@ export interface TaskApi {
   create: (input: CreateTaskInput) => Promise<Task>;
   /** 状态迁移；非法迁移 reject（状态机见 src/main/db/taskStateMachine.ts） */
   updateStatus: (id: string, status: TaskStatus) => Promise<Task>;
+}
+
+// ── ticket #19：agent 会话控制与历史 ─────────────────────────
+
+/** 历史重拉返回（渲染基线；实时端口负责增量） */
+export interface TaskHistory {
+  turns: Turn[];
+  messages: Message[];
+  toolCalls: ToolCall[];
+}
+
+export interface AgentApi {
+  /** 启动首轮（ready → running）；非法状态 reject */
+  start: (taskId: string) => Promise<{ ok: true }>;
+  /** 追问（awaiting_review → running）；非法状态 reject */
+  followup: (taskId: string, text: string) => Promise<{ ok: true }>;
+  /** 取消（活跃态 → cancelled；utility 侧终止 agent 进程） */
+  cancel: (taskId: string) => Promise<{ ok: true }>;
+  /** 历史重拉（turns + messages + toolCalls，按 seq/idx 升序） */
+  history: (taskId: string) => Promise<TaskHistory>;
 }
