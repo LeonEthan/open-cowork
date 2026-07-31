@@ -45,10 +45,14 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 import claudeStreamJson from './formats/claude-stream-json.mjs';
+import codexJsonrpc from './formats/codex-jsonrpc.mjs'; // ticket #22
+import opencodeSse from './formats/opencode-sse.mjs'; // ticket #22
 import { runScript } from './runner.mjs';
 
 const FORMATS = {
   'claude-stream-json': claudeStreamJson,
+  'codex-jsonrpc': codexJsonrpc, // ticket #22
+  'opencode-sse': opencodeSse, // ticket #22
 };
 
 async function main() {

@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+/**
+ * fake codex CLI 包装（ticket #22）：driver 以真实 `codex app-server` 方式 spawn 本文件，
+ * 转发到 fake agent harness 并锁定 codex-jsonrpc wire 格式。
+ * （cli.mjs 只认 --format 旗标；真实 CLI 没有此旗标，故用本包装隔离。）
+ */
+import { fileURLToPath } from 'node:url';
+
+process.argv.splice(2, 0, '--format', 'codex-jsonrpc');
+await import(fileURLToPath(new URL('../cli.mjs', import.meta.url)));
