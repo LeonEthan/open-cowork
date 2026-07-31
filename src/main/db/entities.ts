@@ -47,6 +47,8 @@ export interface Task {
   worktree_path: string | null;
   /** 创建 worktree 时 pin 的 base SHA */
   base_sha: string | null;
+  /** Task 与 agent session 严格 1:1（迁移 002 / ticket #18 留位可空；#19 接入 agent 运行时写入） */
+  session_id: string | null;
   created_at: number;
   updated_at: number;
 }
