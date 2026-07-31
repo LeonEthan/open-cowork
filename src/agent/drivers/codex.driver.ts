@@ -7,6 +7,7 @@ import type {
   DriverSession,
   DriverStartParams,
   NormalizedToolCall,
+  PermissionRequestPayload,
   SessionEndReason,
 } from '../events';
 import { deriveToolTarget } from './claude.driver';
@@ -525,16 +526,16 @@ class CodexDriverSession implements DriverSession {
     input: unknown;
     requestKey: string;
   }): Promise<{ behavior: 'allow' | 'deny'; always?: boolean; message?: string }> {
-    const request = {
+    const request: PermissionRequestPayload = {
       id: `codex_perm_${req.requestKey}_${randomUUID().slice(0, 8)}`,
       toolName: req.toolName,
       target: req.target,
       reason: req.reason,
-      options: ['allow_once', 'allow_always', 'deny'] as const,
+      options: ['allow_once', 'allow_always', 'deny'],
       input: req.input,
       suggestions: null,
     };
-    this.emit({ type: 'permission_request', request: { ...request, options: [...request.options] } });
+    this.emit({ type: 'permission_request', request });
     const decision = await resolvePermission(this.params, request);
     this.emit({ type: 'permission_response', requestId: request.id, decision });
     return decision;

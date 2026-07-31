@@ -6,6 +6,7 @@ import type {
   DriverSession,
   DriverStartParams,
   NormalizedToolCall,
+  PermissionRequestPayload,
   SessionEndReason,
 } from '../events';
 import { resolvePermission } from './permission';
@@ -604,18 +605,18 @@ class OpencodeDriverSession implements DriverSession {
     const toolName = normalizeToolName(permission);
     const target =
       (patterns[0] as string | undefined) ?? deriveOpencodeTarget(permission, metadata);
-    const request = {
+    const request: PermissionRequestPayload = {
       id: `opencode_perm_${permissionId}`,
       toolName,
       target: target ?? null,
       // 真实协议无 reason（恒 null）；fake 会携带脚本的 reason 供 contract 回放
       reason: typeof p.reason === 'string' ? p.reason : null,
-      options: ['allow_once', 'allow_always', 'deny'] as const,
+      options: ['allow_once', 'allow_always', 'deny'],
       input: metadata,
       suggestions: null,
     };
     s.turnActive = true;
-    this.emit({ type: 'permission_request', request: { ...request, options: [...request.options] } });
+    this.emit({ type: 'permission_request', request });
     const decision = await resolvePermission(this.params, request);
     this.emit({ type: 'permission_response', requestId: request.id, decision });
 
