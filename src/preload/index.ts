@@ -37,6 +37,42 @@ const api: OpenCoworkApi = {
     updateStatus: (id: string, status: TaskStatus) =>
       ipcRenderer.invoke('tasks:update-status', id, status),
   },
+
+  // ── ticket #28: 内置终端 tab ─────────────────────────────────────────
+  ptyCreate: (key, cols, rows) =>
+    ipcRenderer.invoke('pty:create', key, cols, rows) as Promise<{
+      ok: boolean;
+      cwd: string;
+      created: boolean;
+    }>,
+  ptyWrite: (key, data) => {
+    ipcRenderer.send('pty:write', key, data);
+  },
+  ptyResize: (key, cols, rows) => {
+    ipcRenderer.send('pty:resize', key, cols, rows);
+  },
+  ptyDispose: (key) => {
+    ipcRenderer.send('pty:dispose', key);
+  },
+  onPtyData: (key, cb) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { key: string; data: string }) => {
+      if (payload?.key === key) cb(payload.data);
+    };
+    ipcRenderer.on('pty:data', listener);
+    return () => {
+      ipcRenderer.removeListener('pty:data', listener);
+    };
+  },
+  onPtyExit: (key, cb) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { key: string; exitCode: number }) => {
+      if (payload?.key === key) cb(payload.exitCode);
+    };
+    ipcRenderer.on('pty:exit', listener);
+    return () => {
+      ipcRenderer.removeListener('pty:exit', listener);
+    };
+  },
+  // ── ticket #28 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);

@@ -1,0 +1,83 @@
+import { app } from 'electron';
+import { resolveTerminalCwd } from '../pty/cwd';
+import { GLOBAL_TERMINAL_KEY, PtySessionManager } from '../pty/sessions';
+import type { ServiceContext } from './index';
+
+/**
+ * pty 服务（ticket #28 内置终端 tab）：
+ * - node-pty 起登录 shell（macOS 默认 /bin/zsh -l，读 SHELL 兜底，见 pty/shell.ts）；
+ * - per taskId 各一独立会话（key=taskId；无任务选中时 key='global'）；
+ * - IPC：pty:create（invoke，懒启动/复用）· pty:write · pty:resize · pty:dispose；
+ *   输出经 pty:data / pty:exit 推回渲染端（仅创建会话的那个 webContents）；
+ * - cwd 由 main 侧按当前任务解析（worktree_path → workspace.path → home，见 pty/cwd.ts）；
+ * - 窗口关闭 / 应用退出前全部 pty 清理。
+ *
+ * 会话本体在 pty/sessions.ts（纯 Node，可单测），本文件只做接线与来源校验。
+ */
+
+/** taskId 为 uuid（含连字符），'global' 字面量；拒绝路径字符防注入 */
+const KEY_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_WRITE_LEN = 1_000_000;
+
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+export default function register(ctx: ServiceContext): void {
+  const manager = new PtySessionManager();
+
+  // 窗口级清理（macOS 关窗不退 app、窗口可经 activate 重建，故按实例 hook 一次）；
+  // before-quit 兜底，保证任何退出路径下不残留子进程。
+  const hookedWindows = new WeakSet<object>();
+  const hookWindowCleanup = (): void => {
+    const win = ctx.getMainWindow();
+    if (!win || hookedWindows.has(win)) return;
+    hookedWindows.add(win);
+    win.once('closed', () => manager.disposeAll());
+    win.webContents.once('destroyed', () => manager.disposeAll());
+  };
+  app.on('before-quit', () => manager.disposeAll());
+
+  ctx.ipcMain.handle('pty:create', (event, key: unknown, cols: unknown, rows: unknown) => {
+    if (typeof key !== 'string' || !KEY_PATTERN.test(key)) {
+      throw new Error('[pty] 非法会话 key');
+    }
+    const win = ctx.getMainWindow();
+    if (!win || event.sender !== win.webContents) {
+      throw new Error('[pty] 来源非法');
+    }
+    hookWindowCleanup();
+    const wc = event.sender;
+    const cwd = resolveTerminalCwd(ctx.db, key === GLOBAL_TERMINAL_KEY ? null : key);
+    const result = manager.getOrCreate(
+      key,
+      { cols: clampInt(cols, 2, 500, 80), rows: clampInt(rows, 1, 200, 24), cwd },
+      {
+        onData: (data) => {
+          if (!wc.isDestroyed()) wc.send('pty:data', { key, data });
+        },
+        onExit: (exitCode) => {
+          if (!wc.isDestroyed()) wc.send('pty:exit', { key, exitCode });
+        },
+      },
+    );
+    return { ok: true as const, cwd: result.cwd, created: result.created };
+  });
+
+  ctx.ipcMain.on('pty:write', (_event, key: unknown, data: unknown) => {
+    if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
+    if (typeof data !== 'string' || data.length > MAX_WRITE_LEN) return;
+    manager.write(key, data);
+  });
+
+  ctx.ipcMain.on('pty:resize', (_event, key: unknown, cols: unknown, rows: unknown) => {
+    if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
+    manager.resize(key, clampInt(cols, 2, 500, 80), clampInt(rows, 1, 200, 24));
+  });
+
+  ctx.ipcMain.on('pty:dispose', (_event, key: unknown) => {
+    if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
+    manager.dispose(key);
+  });
+}

@@ -16,6 +16,21 @@ export interface OpenCoworkApi {
   // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
   workspaces: WorkspaceApi;
   tasks: TaskApi;
+
+  // ── ticket #28: 内置终端 tab ─────────────────────────────────────────
+  /** 创建（或复用）per-task 终端会话；key=taskId 或 'global'；懒启动——首次调用才起 shell */
+  ptyCreate: (
+    key: string,
+    cols: number,
+    rows: number,
+  ) => Promise<{ ok: boolean; cwd: string; created: boolean }>;
+  ptyWrite: (key: string, data: string) => void;
+  ptyResize: (key: string, cols: number, rows: number) => void;
+  ptyDispose: (key: string) => void;
+  /** 订阅会话输出 / 退出；均返回取消订阅函数 */
+  onPtyData: (key: string, cb: (data: string) => void) => () => void;
+  onPtyExit: (key: string, cb: (exitCode: number) => void) => () => void;
+  // ── ticket #28 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
