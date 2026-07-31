@@ -117,7 +117,11 @@ export function updateStatus(
   if (!task) throw new Error(`任务不存在: ${id}`);
   assertTransition(task.status, to);
   const reason =
-    to === 'failed' ? (failReason ?? task.fail_reason ?? '未知错误') : to === 'ready' || to === 'running' ? null : task.fail_reason;
+    to === 'failed'
+      ? (failReason ?? task.fail_reason ?? '未知错误')
+      : to === 'ready' || to === 'running'
+        ? null
+        : task.fail_reason;
   db.prepare('UPDATE tasks SET status = ?, fail_reason = ?, updated_at = ? WHERE id = ?').run(
     to,
     reason,
