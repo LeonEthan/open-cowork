@@ -5,6 +5,7 @@ import type {
   AgentEvent,
   DriverStartParams,
   PermissionDecision,
+  PermissionHandler,
   PermissionRequestPayload,
 } from './events';
 import { ProcessRegistry } from './processRegistry';
@@ -20,14 +21,17 @@ import { ProcessRegistry } from './processRegistry';
  * 3. JSONL 旁路：原始归一事件与入向指令逐行写
  *    <dataDir>/events/<taskId>/<sessionId>.jsonl（排障/回放，ARCHITECTURE §5）；
  * 4. 进程注册表两级清理：运行时 Map + 启动时 sweepStale（见 processRegistry.ts）；
- * 5. 审批桩：permission_request 事件接通事件流，响应端为「全部允许」临时桩——
- *    【#20 审批流替换此处】fail-closed 红线自第一天成立：桩自身异常/超时一律 deny。
+ * 5. 审批中继（ticket #20 替换全允许桩）：driver permissionHandler → permission-ask
+ *    转发 main 审批服务（策略引擎/托盘决议），agent-command permission-respond 回执
+ *    resolve 挂起的 handler。fail-closed 红线不变：handler 异常/超时 driver 层 deny；
+ *    会话终结时本进程内挂起的请求一律立即 deny 结清（不悬挂等 120s 超时）。
  *
  * 与 main 的协议（parentPort）：
  *   in : {type:'init', dataDir}
- *        {type:'agent-command', command: StartCommand | FollowupCommand | CancelCommand}
+ *        {type:'agent-command', command: StartCommand | FollowupCommand | CancelCommand | PermissionRespondCommand}
  *        {type:'agent-port'}（附带 MessagePort，见 services/system.ts 接线）
  *   out: {type:'agent-event', taskId, event}  —— main 侧持久化分派
+ *        {type:'permission-ask', taskId, request} —— #20 审批询问（main 策略引擎裁决）
  * 与 renderer 的协议（MessagePort）：
  *   in : {type:'ping'}
  *   out: {type:'pong', at} | {type:'agent-event', taskId, event}
@@ -128,16 +132,58 @@ function dispatchEvent(entry: SessionEntry, event: AgentEvent): void {
   parentPort?.postMessage({ type: 'agent-event', taskId: entry.taskId, event });
 }
 
-// ── 审批桩（#20 替换点；fail-closed） ──────────────────────────────────────
+// ── 审批中继（ticket #20：替换全允许桩；fail-closed 语义不变） ──────────────
+//
+// 链路：driver permissionHandler → permission-ask（parentPort）→ main 审批服务
+// （策略引擎：三档 + 「总是允许」规则）→ agent-command permission-respond →
+// resolve 本进程挂起的 handler → driver 补发 permission_response 回事件流。
+// 会话终结（done 结算）时挂起请求一律立即 deny 结清——fail-closed，不等超时兜底。
 
-/**
- * 临时「全部允许」桩：请求已由 driver 同步进事件流（permission_request），
- * 决议回执也由 driver 补发（permission_response）——桩只做一件事：立即 allow。
- * 【#20 审批流替换此处】替换为「转发 main 审批服务 → 托盘决议」的真实链路。
- * fail-closed 兜底在 driver 层（桩抛错/超时一律 deny），桩自身保持纯函数。
- */
-function createPermissionStub(): (req: PermissionRequestPayload) => Promise<PermissionDecision> {
-  return async (_req) => ({ behavior: 'allow', always: false });
+interface PendingPermission {
+  taskId: string;
+  resolve: (decision: PermissionDecision) => void;
+}
+
+const pendingPermissions = new Map<string, PendingPermission>();
+
+function createPermissionRelay(entry: SessionEntry): PermissionHandler {
+  return (req) =>
+    new Promise<PermissionDecision>((resolve) => {
+      pendingPermissions.set(req.id, { taskId: entry.taskId, resolve });
+      bypassWrite(entry, 'in', { kind: 'permission-ask', request: req });
+      try {
+        parentPort?.postMessage({ type: 'permission-ask', taskId: entry.taskId, request: req });
+      } catch (err) {
+        // parentPort 不可用（main 已退）：立即 fail-closed，不悬挂
+        pendingPermissions.delete(req.id);
+        resolve({
+          behavior: 'deny',
+          message: `审批链路不可用（fail-closed）: ${err instanceof Error ? err.message : err}`,
+        });
+      }
+    });
+}
+
+function handlePermissionRespond(cmd: PermissionRespondCommand): void {
+  const pending = pendingPermissions.get(cmd.requestId);
+  if (!pending) {
+    // 幂等：重复/陌生回执（会话已清账后补到）一律 no-op
+    console.warn(`[agent] permission-respond 找不到挂起请求: ${cmd.requestId}`);
+    return;
+  }
+  pendingPermissions.delete(cmd.requestId);
+  const entry = sessions.get(pending.taskId);
+  if (entry) bypassWrite(entry, 'in', cmd);
+  pending.resolve(cmd.decision);
+}
+
+/** 会话终结清账：该任务全部挂起请求立即 deny（fail-closed 快速结清） */
+function settlePendingPermissions(taskId: string, message: string): void {
+  for (const [id, p] of [...pendingPermissions]) {
+    if (p.taskId !== taskId) continue;
+    pendingPermissions.delete(id);
+    p.resolve({ behavior: 'deny', message });
+  }
 }
 
 // ── 会话命令 ─────────────────────────────────────────────────────────────
@@ -150,6 +196,8 @@ interface StartCommand {
   cwd: string;
   model: string | null;
   env?: Record<string, string>;
+  /** 审批等待超时（毫秒，超时=deny fail-closed）；缺省 driver 默认 120s */
+  permissionTimeoutMs?: number;
 }
 
 interface FollowupCommand {
@@ -163,7 +211,15 @@ interface CancelCommand {
   taskId: string;
 }
 
-type AgentCommand = StartCommand | FollowupCommand | CancelCommand;
+/** ticket #20：main 审批服务回执（托盘决议 / 策略自动裁决 / 终止清账 deny） */
+interface PermissionRespondCommand {
+  kind: 'permission-respond';
+  taskId: string;
+  requestId: string;
+  decision: PermissionDecision;
+}
+
+type AgentCommand = StartCommand | FollowupCommand | CancelCommand | PermissionRespondCommand;
 
 function handleStart(cmd: StartCommand): void {
   if (sessions.has(cmd.taskId)) {
@@ -202,8 +258,13 @@ function handleStart(cmd: StartCommand): void {
     cwd: cmd.cwd,
     model: cmd.model,
     env: cmd.env,
-    permissionHandler: createPermissionStub(),
+    permissionHandler: createPermissionRelay(entry),
+    ...(typeof cmd.permissionTimeoutMs === 'number'
+      ? { permissionTimeoutMs: cmd.permissionTimeoutMs }
+      : {}),
     // executablePath 缺省——claude driver 读 OPEN_COWORK_CLAUDE_CLI（e2e 覆盖点）
+    // alwaysAllowRules 缺省——#20 规则匹配收敛在 main 策略引擎层（单一口径，
+    // 中途新增的规则即时生效；driver 预过滤参数留给降级 driver 用）
   };
 
   let driver;
@@ -230,12 +291,15 @@ function handleStart(cmd: StartCommand): void {
     .then(({ reason, error }) => {
       if (entry.ended) return;
       entry.ended = true;
+      // #20：会话终结清账——挂起审批一律立即 deny（fail-closed 快速结清，不等 120s 超时）
+      settlePendingPermissions(cmd.taskId, 'agent 会话已结束，待审批请求已取消');
       // driver 自身未显式发 session_ended 时宿主兜底（事件流对消费者保持完备）
       dispatchEvent(entry, { type: 'session_ended', reason, ...(error ? { error } : {}) });
     })
     .catch((err: unknown) => {
       if (entry.ended) return;
       entry.ended = true;
+      settlePendingPermissions(cmd.taskId, 'agent 会话异常结束，待审批请求已取消');
       const message = err instanceof Error ? err.message : String(err);
       dispatchEvent(entry, { type: 'session_ended', reason: 'failed', error: message });
     })
@@ -266,6 +330,10 @@ function handleCancel(cmd: CancelCommand): void {
 }
 
 function shutdown(): void {
+  // 进程退出前清账：全部挂起审批立即 deny（fail-closed，不等 driver 超时兜底）
+  for (const taskId of sessions.keys()) {
+    settlePendingPermissions(taskId, 'agent 适配层正在关闭，待审批请求已取消');
+  }
   registry.killAll();
   sessions.clear();
   try {
@@ -316,6 +384,7 @@ parentPort.on('message', (e) => {
       if (cmd.kind === 'start') handleStart(cmd);
       else if (cmd.kind === 'followup') handleFollowup(cmd);
       else if (cmd.kind === 'cancel') handleCancel(cmd);
+      else if (cmd.kind === 'permission-respond') handlePermissionRespond(cmd);
       break;
     }
     case 'shutdown':

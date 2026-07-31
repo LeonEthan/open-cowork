@@ -36,6 +36,10 @@ export interface OpenCoworkApi {
   onPtyData: (key: string, cb: (data: string) => void) => () => void;
   onPtyExit: (key: string, cb: (exitCode: number) => void) => () => void;
   // ── ticket #28 end ────────────────────────────────────────────────────
+
+  // ── ticket #20：权限审批流（审批托盘决议 + per-task 档位切换） ──────────
+  approvals: ApprovalApi;
+  // ── ticket #20 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -92,3 +96,32 @@ export interface AgentApi {
   /** 历史重拉（turns + messages + toolCalls，按 seq/idx 升序） */
   history: (taskId: string) => Promise<TaskHistory>;
 }
+
+// ── ticket #20：权限审批流 ─────────────────────────────
+
+/** per-task 权限档位（与 main/db/entities.ts PermissionMode 同形；本地重定义保持 shared 零运行时依赖） */
+export type PermissionMode = 'readonly' | 'auto' | 'full';
+
+/** 托盘决议回传载荷（与 agent/events.ts PermissionDecision 同形，decision 由 main 校验） */
+export interface PermissionDecisionInput {
+  behavior: 'allow' | 'deny';
+  /** allow 且 always=true → 记忆「总是允许」规则（工具 + 目标模式） */
+  always?: boolean;
+  /** deny 时附给 agent 的理由 */
+  message?: string;
+}
+
+export interface ApprovalApi {
+  /**
+   * 托盘决议回传（IPC agent:permission-respond；幂等——
+   * settled=false 表示请求已结清/陌生，双击/重连补发安全）
+   */
+  respond: (
+    taskId: string,
+    requestId: string,
+    decision: PermissionDecisionInput,
+  ) => Promise<{ ok: true; settled: boolean }>;
+  /** 三档权限 per-task 循环切换（持久化 tasks.permission_mode；任何状态可切） */
+  setPermissionMode: (taskId: string, mode: PermissionMode) => Promise<Task>;
+}
+// ── ticket #20 end ─────────────────────────────────────

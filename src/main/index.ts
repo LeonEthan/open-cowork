@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { BrowserWindow, app, ipcMain, utilityProcess } from 'electron';
 import { DB_FILE_NAME, DATA_SUBDIRS, resolveDataDir } from '../shared/paths';
 import { createAgentEventDispatcher, recoverInterruptedTasks } from './agentEvents';
+import { createApprovalService } from './approval/service';
 import { openDatabase } from './db/database';
-import type { AgentEvent } from '../agent/events';
+import type { AgentEvent, PermissionRequestPayload } from '../agent/events';
 import { registerServices } from './services';
 
 /**
@@ -41,6 +42,24 @@ const dispatchAgentEvent = createAgentEventDispatcher({
   get db() {
     if (!db) throw new Error('db 未就绪');
     return db;
+  },
+  broadcastTasksChanged,
+});
+
+/**
+ * ticket #20：审批回路中枢（策略引擎 + pending 注册表）。
+ * utility 的 permissionHandler 经 permission-ask 询问 → 策略裁决 →
+ * 自动档/只读档立即回 driver，或登记 pending 等托盘 IPC（agent:permission-respond）。
+ * 终止路径（turn_end/session_ended）经下方消息分派触发 cancelForTask 清账（fail-closed）。
+ */
+const approvalService = createApprovalService({
+  get db() {
+    if (!db) throw new Error('db 未就绪');
+    return db;
+  },
+  postToAgent: (msg) => {
+    if (!agentProcess) throw new Error('agent 适配层未就绪');
+    agentProcess.postMessage(msg);
   },
   broadcastTasksChanged,
 });
@@ -82,9 +101,23 @@ function forkAgentProcess(): void {
   agentProcess.postMessage({ type: 'init', dataDir });
   agentProcess.on(
     'message',
-    (msg: { type?: string; taskId?: string; event?: AgentEvent } | null) => {
+    (
+      msg:
+        | { type?: string; taskId?: string; event?: AgentEvent; request?: PermissionRequestPayload }
+        | null,
+    ) => {
       if (msg?.type === 'agent-event' && typeof msg.taskId === 'string' && msg.event) {
         dispatchAgentEvent(msg.taskId, msg.event);
+        // ticket #20：轮次/会话终结打断 pending（agent 不再等）——视为取消（fail-closed 清账；
+        // 状态迁移由 dispatcher 完成：awaiting_approval → awaiting_review/failed/cancelled 照常）
+        if (msg.event.type === 'turn_end' || msg.event.type === 'session_ended') {
+          approvalService.cancelForTask(msg.taskId, '轮次结束，待审批请求已取消');
+        }
+        return;
+      }
+      // ticket #20：utility permissionHandler 的审批询问（策略引擎裁决）
+      if (msg?.type === 'permission-ask' && typeof msg.taskId === 'string' && msg.request) {
+        approvalService.handleAsk(msg.taskId, msg.request);
       }
     },
   );
@@ -93,6 +126,8 @@ function forkAgentProcess(): void {
     agentProcess = null;
     // utility 崩溃：进行中的会话随进程消失，活跃任务标 failed（UI 呈现原因 + 可重试）
     if (db) {
+      // ticket #20：pending 审批清账（fail-closed）先于任务标 failed
+      approvalService.cancelAll(`agent 适配层进程退出 (code=${code ?? 'unknown'})`);
       recoverInterruptedTasks(db, `agent 适配层进程退出 (code=${code ?? 'unknown'})`);
       broadcastTasksChanged();
     }
@@ -111,6 +146,7 @@ void app.whenReady().then(() => {
     dataDir,
     getMainWindow: () => mainWindow,
     getAgentProcess: () => agentProcess,
+    approval: approvalService,
   });
 
   forkAgentProcess();

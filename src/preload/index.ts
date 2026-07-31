@@ -88,6 +88,18 @@ const api: OpenCoworkApi = {
     };
   },
   // ── ticket #28 end ────────────────────────────────────────────────────
+
+  // ── ticket #20：权限审批流 ───────────────────────────────────────────
+  approvals: {
+    respond: (taskId, requestId, decision) =>
+      ipcRenderer.invoke('agent:permission-respond', taskId, requestId, decision) as Promise<{
+        ok: true;
+        settled: boolean;
+      }>,
+    setPermissionMode: (taskId, mode) =>
+      ipcRenderer.invoke('tasks:set-permission-mode', taskId, mode),
+  },
+  // ── ticket #20 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);
