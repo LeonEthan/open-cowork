@@ -2,12 +2,22 @@
  * 脚本解释器（wire 无关）：按 JSONL 动作逐行驱动。
  * io 由 cli.mjs 注入（emit/emitRaw/waitStdinLine/sleep/log），
  * 以便纯 Node 测试也能不起进程直接驱动 emitter。
+ *
+ * emit 的 detach:true（ticket #20 并发审批脚本）：发射后不阻塞脚本推进
+ * （permission_request 默认阻塞等回执——并发场景需要先发出多条再逐条决议）。
+ * detach 事件内部的失败不再上抛（脚本已走远），仅经 emitter log 可见。
  */
 export async function runScript(actions, io) {
   for (const action of actions) {
     switch (action?.action) {
       case 'emit':
-        await io.emit(action.event);
+        if (action.detach === true) {
+          Promise.resolve(io.emit(action.event)).catch((err) => {
+            io.log?.(`detach 事件失败: ${err?.message ?? err}`);
+          });
+        } else {
+          await io.emit(action.event);
+        }
         break;
       case 'emit_raw':
         io.emitRaw(action.line);

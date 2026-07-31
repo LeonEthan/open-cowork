@@ -1,3 +1,4 @@
+import * as approvalRepo from './db/approvalRepo';
 import * as conversationRepo from './db/conversationRepo';
 import * as taskRepo from './db/taskRepo';
 import type { Database } from './db/database';
@@ -35,6 +36,9 @@ export function recoverInterruptedTasks(db: Database, reason: string): number {
   for (const { id } of rows) {
     const turn = conversationRepo.getRunningTurn(db, id);
     if (turn) conversationRepo.closeTurn(db, turn.id, 'failed');
+    // ticket #20（additive）：中断任务的 pending 审批行一并清账（fail-closed，
+    // 防重启后历史重拉把已成尸体的请求重新摆上审批托盘）
+    approvalRepo.denyPendingApprovals(db, id, reason);
     taskRepo.updateStatus(db, id, 'failed', Date.now(), reason);
   }
   return rows.length;

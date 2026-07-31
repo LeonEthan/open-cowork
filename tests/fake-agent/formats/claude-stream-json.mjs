@@ -264,13 +264,28 @@ export default function createClaudeStreamJsonEmitter(io) {
               subtype: 'can_use_tool',
               tool_name: event.toolName,
               input: event.input ?? {},
-              permission_suggestions: null,
+              // ticket #20：脚本可携带 permission_suggestions（「总是允许」回写 contract 用）
+              permission_suggestions: event.suggestions ?? null,
               blocked_path: null,
               decision_reason: event.reason ?? null,
             },
           });
           const response = await responsePromise; // 等 SDK 回 control_response 再继续脚本
           io.log(`permission ${requestId} 决议: ${JSON.stringify(response)}`);
+          // ticket #20：可选回执断言——对 control_response 内层载荷做键级 JSON 相等校验
+          // （期望值 null 可断言键缺失，如 allow_once 不得带 updatedPermissions）；
+          // 未命中抛错 → 脚本失败非零退出 → driver 呈现 failed（contract 断言失败信号）
+          if (event.expectResponse && typeof event.expectResponse === 'object') {
+            const payload = response?.response ?? {};
+            for (const [key, want] of Object.entries(event.expectResponse)) {
+              const got = payload[key];
+              if (JSON.stringify(got ?? null) !== JSON.stringify(want)) {
+                throw new Error(
+                  `permission 回执断言失败: ${key} 期望 ${JSON.stringify(want)} 实际 ${JSON.stringify(got)}`,
+                );
+              }
+            }
+          }
           return;
         }
         case 'turn_end': {

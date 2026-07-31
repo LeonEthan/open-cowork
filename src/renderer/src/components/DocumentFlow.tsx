@@ -6,7 +6,8 @@ import { useConversationStore } from '../stores/conversation';
 import type { ConversationItem } from '../stores/conversation';
 import { useDataStore } from '../stores/data';
 import { useUiStore } from '../stores/ui';
-import type { TaskListItem } from '../../../shared/api';
+import type { PermissionMode, TaskListItem } from '../../../shared/api';
+import { ApprovalTray } from './ApprovalTray';
 import { Markdown } from './Markdown';
 
 /**
@@ -110,6 +111,8 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
         <div ref={endRef} />
       </div>
 
+      {/* ticket #20：审批托盘——输入区上方底部托盘，有待审批时出现（⌘1/2/3） */}
+      <ApprovalTray task={task} />
       <Composer task={task} />
     </article>
   );
@@ -176,7 +179,7 @@ function ToolRow({ item }: { item: Extract<ConversationItem, { kind: 'tool' }> }
   );
 }
 
-/** 审批行（本票为全允许桩的即时回执呈现；托盘交互是 #20 的范围） */
+/** 审批行（ticket #20：时间线只读呈现；逐条裁决交互在输入区上方托盘 ApprovalTray） */
 function PermissionRow({
   item,
 }: {
@@ -239,6 +242,23 @@ function FailedBanner({ task }: { task: TaskListItem }): React.JSX.Element {
 
 // ── 输入区 ───────────────────────────────────────────────────────────────
 
+/** ticket #20：权限三档循环（per-task 持久化 tasks.permission_mode，IPC tasks:set-permission-mode） */
+const MODE_NEXT: Record<PermissionMode, PermissionMode> = {
+  readonly: 'auto',
+  auto: 'full',
+  full: 'readonly',
+};
+const MODE_LABELS: Record<PermissionMode, string> = {
+  readonly: '只读',
+  auto: '自动',
+  full: '放权',
+};
+const MODE_TITLES: Record<PermissionMode, string> = {
+  readonly: '权限档位：只读——写/命令类请求一律自动拒绝',
+  auto: '权限档位：自动——命中「总是允许」规则放行，其余逐条审批',
+  full: '权限档位：完全放权——一律放行，不再打扰',
+};
+
 function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const appendUserMessage = useConversationStore((s) => s.appendUserMessage);
   const refreshAll = useDataStore((s) => s.refreshAll);
@@ -249,7 +269,20 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const status = task.status;
   const canType = status === 'awaiting_review';
   const canStart = status === 'ready';
-  const running = status === 'running';
+  // #20：awaiting_approval 期间 agent 仍存活等裁决——取消键保持可用
+  const cancellable = status === 'running' || status === 'awaiting_approval';
+  const mode: PermissionMode = task.permission_mode ?? 'auto';
+
+  const cycleMode = async (): Promise<void> => {
+    const api = window.openCowork;
+    if (!api) return;
+    try {
+      await api.approvals.setPermissionMode(task.id, MODE_NEXT[mode]);
+      await refreshAll(); // tasks:changed 亦会触发重拉，这里抢一拍让 chip 即时更新
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const send = async (): Promise<void> => {
     const api = window.openCowork;
@@ -293,13 +326,17 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const placeholder =
     status === 'ready'
       ? '首轮将以创建时的需求描述开跑'
-      : running
-        ? 'agent 运行中…'
-        : status === 'awaiting_review'
-          ? '追问…（Enter 发送，Shift+Enter 换行）'
-          : status === 'failed'
-            ? '任务已失败——先点上方「重试」'
-            : '任务已结束';
+      : status === 'awaiting_approval'
+        ? '待审批——请在上方托盘裁决（⌘1 允许 / ⌘2 总是 / ⌘3 拒绝）'
+        : cancellable
+          ? 'agent 运行中…'
+          : status === 'awaiting_review'
+            ? mode === 'readonly'
+              ? '追问…（只读档：写/命令类将被自动拒绝）'
+              : '追问…（Enter 发送，Shift+Enter 换行）'
+            : status === 'failed'
+              ? '任务已失败——先点上方「重试」'
+              : '任务已结束';
 
   return (
     <div className="composer" data-testid="composer">
@@ -318,6 +355,17 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
               {task.model}
             </span>
           )}
+          {/* ticket #20：权限档位 chip（三档循环切换，per-task 持久化） */}
+          <button
+            type="button"
+            className="chip chip-btn"
+            data-testid="permission-mode-chip"
+            data-mode={mode}
+            title={MODE_TITLES[mode]}
+            onClick={() => void cycleMode()}
+          >
+            ⚙ {MODE_LABELS[mode]}
+          </button>
         </div>
         <textarea
           className="composer-input"
@@ -335,7 +383,7 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
           }}
         />
         <div className="composer-actions">
-          {running ? (
+          {cancellable ? (
             <button
               type="button"
               className="icon-btn"

@@ -118,11 +118,21 @@ export interface Approval {
   reason: string | null;
   /**
    * 「总是允许」命中的规则模式（工具 + 目标模式，如 `Bash: npm *`，ARCHITECTURE §6）；
-   * 规则持久化在后续审批票据中实现，本表先留位。
+   * 规则本体存 always_allow_rules（迁移 004 / ticket #20），本列记命中/来源快照。
    */
   rule_pattern: string | null;
   created_at: number;
   decided_at: number | null;
+}
+
+/** 「总是允许」规则行（迁移 004 / ticket #20；工具 + 目标模式，全局作用域） */
+export interface AlwaysAllowRuleRow {
+  id: string;
+  /** 工具名精确匹配（与 agent 原生工具名一致，如 Bash） */
+  tool: string;
+  /** 目标模式（仅 `*` 通配；匹配器见 src/agent/events.ts matchesAlwaysAllowRule） */
+  target_pattern: string;
+  created_at: number;
 }
 
 export type FileChangeType = 'added' | 'modified' | 'deleted' | 'renamed';

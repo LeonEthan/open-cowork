@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from './database';
-import type { ApprovalDecision, Message, MessageRole, ToolCall, Turn, TurnStatus, UsageRecord } from './entities';
+import type { Approval, ApprovalDecision, Message, MessageRole, ToolCall, Turn, TurnStatus, UsageRecord } from './entities';
 
 /**
  * 会话持久化仓储（ticket #19）：Turn / Message / ToolCall / Approval / UsageRecord
@@ -235,6 +235,8 @@ export interface TaskHistory {
   turns: Turn[];
   messages: Message[];
   toolCalls: ToolCall[];
+  /** ticket #20（additive）：仍 pending 的审批行——重启/重连后恢复审批托盘的渲染基线 */
+  approvals: Approval[];
 }
 
 export function listHistory(db: Database, taskId: string): TaskHistory {
@@ -247,5 +249,8 @@ export function listHistory(db: Database, taskId: string): TaskHistory {
   const toolCalls = db
     .prepare('SELECT * FROM tool_calls WHERE task_id = ? ORDER BY seq ASC, started_at ASC')
     .all(taskId) as ToolCall[];
-  return { turns, messages, toolCalls };
+  const approvals = db
+    .prepare("SELECT * FROM approvals WHERE task_id = ? AND decision = 'pending' ORDER BY created_at ASC")
+    .all(taskId) as Approval[];
+  return { turns, messages, toolCalls, approvals };
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from './database';
-import type { Task, TaskStatus } from './entities';
+import type { Task, TaskStatus, PermissionMode } from './entities';
 import { assertTransition } from './taskStateMachine';
 
 /**
@@ -136,4 +136,22 @@ export function updateStatus(
 /** 写入 agent 原生 session id（session_started 时；1:1，只允许写一次或同值重写） */
 export function setSessionId(db: Database, id: string, sessionId: string, now: number = Date.now()): void {
   db.prepare('UPDATE tasks SET session_id = ?, updated_at = ? WHERE id = ?').run(sessionId, now, id);
+}
+
+// ── ticket #20：per-task 权限档位（additive；不涉状态机，任何状态下可切换） ──
+
+const PERMISSION_MODES: readonly PermissionMode[] = ['readonly', 'auto', 'full'];
+
+/** 切换权限档位（三档：readonly / auto / full，ARCHITECTURE §6；非法值抛错） */
+export function setPermissionMode(
+  db: Database,
+  id: string,
+  mode: PermissionMode,
+  now: number = Date.now(),
+): Task {
+  if (!PERMISSION_MODES.includes(mode)) throw new Error(`非法权限档位: ${mode}`);
+  const task = getById(db, id);
+  if (!task) throw new Error(`任务不存在: ${id}`);
+  db.prepare('UPDATE tasks SET permission_mode = ?, updated_at = ? WHERE id = ?').run(mode, now, id);
+  return { ...task, permission_mode: mode, updated_at: now };
 }

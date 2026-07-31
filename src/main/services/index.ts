@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron';
 import type { Database } from '../db/database';
 import type { BrowserWindow, UtilityProcess } from 'electron';
+import type { ApprovalService } from '../approval/service';
 
 export interface ServiceContext {
   ipcMain: IpcMain;
@@ -10,6 +11,8 @@ export interface ServiceContext {
   dataDir: string;
   getMainWindow: () => BrowserWindow | null;
   getAgentProcess: () => UtilityProcess | null;
+  /** ticket #20（additive）：审批回路中枢（pending 注册表 + 策略引擎接线） */
+  approval: ApprovalService;
 }
 
 export type ServiceRegister = (ctx: ServiceContext) => void;
