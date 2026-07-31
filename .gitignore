@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+.claude/worktrees/
+.playwright/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+# 本地数据目录（默认在 ~/.open-cowork/；若有人用 OPEN_COWORK_DATA_DIR 指进仓库也别提交）
+.open-cowork/
