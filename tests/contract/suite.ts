@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { AgentDriver, AgentEvent, DriverStartParams, PermissionDecision } from '../../src/agent/events';
+import type { AgentDriver, AgentEvent, DriverStartParams, PermissionDecision, PermissionRequestPayload } from '../../src/agent/events';
 
 /**
  * 表驱动 contract 测试套件（ticket #19，测试接缝 1 的消费端）。
@@ -51,6 +51,10 @@ export async function runSession(
   opts: {
     prompt?: string;
     permissionDecision?: PermissionDecision;
+    /** ticket #20：自定义审批钩子（fail-closed 用例：抛错/永不决议）；缺省回 permissionDecision 桩 */
+    permissionHandler?: (req: PermissionRequestPayload) => Promise<PermissionDecision>;
+    /** ticket #20：审批等待超时（毫秒，超时=deny fail-closed）；缺省 driver 默认 120s */
+    permissionTimeoutMs?: number;
     afterStart?: (session: {
       cancel: () => Promise<void>;
       sendFollowup: (text: string) => Promise<void>;
@@ -75,7 +79,12 @@ export async function runSession(
       cwd: process.cwd(),
       model: null,
       ...entry.makeParams(scriptPath),
-      permissionHandler: async () => opts.permissionDecision ?? { behavior: 'allow' },
+      permissionHandler:
+        opts.permissionHandler ??
+        (async () => opts.permissionDecision ?? { behavior: 'allow' }),
+      ...(typeof opts.permissionTimeoutMs === 'number'
+        ? { permissionTimeoutMs: opts.permissionTimeoutMs }
+        : {}),
     },
     (e) => {
       events.push(e);
@@ -278,6 +287,129 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
       expect(collected.byType('turn_end')).toHaveLength(2);
       const text = collected.byType('text_delta').map((e) => e.delta).join('');
       expect(text).toBe('第一轮回复第二轮回复');
+    });
+
+    // ── ticket #20：审批 fail-closed 与回执形状（fake 脚本 expectResponse 做 wire 级断言）──
+
+    it('审批 fail-closed：handler 抛错 → deny 且理由回传 agent（ARCHITECTURE §10）', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        {
+          action: 'emit',
+          event: {
+            kind: 'permission_request',
+            id: 'perm_throw',
+            toolName: 'Bash',
+            input: { command: 'rm -rf build' },
+            // wire 级断言：agent 实际收到 deny + 原始错误消息
+            expectResponse: { behavior: 'deny', message: '审批链路炸了' },
+          },
+        },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script, {
+        permissionHandler: async () => {
+          throw new Error('审批链路炸了');
+        },
+      });
+      // fake 内 expectResponse 断言通过才会走到 turn_end（否则脚本失败非零退出 → failed）
+      expect(end.reason).toBe('completed');
+      const res = collected.byType('permission_response')[0];
+      // 归一 requestId 由 driver 生成（与 wire request_id 不同源）——对应关系经
+      // permission_request 事件 id 断言，wire 级正确性由 fake 的 expectResponse 保证
+      const req = collected.byType('permission_request')[0];
+      expect(res.requestId).toBe(req.request.id);
+      expect(res.decision.behavior).toBe('deny');
+      expect(res.decision.message).toBe('审批链路炸了');
+    });
+
+    it('审批 fail-closed：handler 永不决议 → permissionTimeoutMs 超时 deny', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        {
+          action: 'emit',
+          event: {
+            kind: 'permission_request',
+            id: 'perm_slow',
+            toolName: 'Bash',
+            input: { command: 'npm test' },
+            expectResponse: { behavior: 'deny' },
+          },
+        },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script, {
+        permissionTimeoutMs: 300,
+        permissionHandler: () => new Promise<PermissionDecision>(() => {}), // 悬挂
+      });
+      expect(end.reason).toBe('completed');
+      const res = collected.byType('permission_response')[0];
+      expect(res.decision.behavior).toBe('deny');
+      expect(res.decision.message).toContain('超时');
+    });
+
+    it('审批回执形状：allow_once 不带 updatedPermissions；allow_always + suggestions 原样回写', async () => {
+      const SUGGESTIONS = [
+        {
+          type: 'addRules',
+          rules: [{ toolName: 'Bash', ruleContent: 'npm *' }],
+          behavior: 'allow',
+          destination: 'projectSettings',
+        },
+      ];
+      // allow_once：回执允许但不回写任何权限
+      {
+        const script = writeScript([
+          { action: 'expect_stdin' },
+          {
+            action: 'emit',
+            event: {
+              kind: 'permission_request',
+              id: 'perm_once',
+              toolName: 'Bash',
+              input: { command: 'npm install' },
+              suggestions: SUGGESTIONS,
+              expectResponse: { behavior: 'allow', updatedPermissions: null },
+            },
+          },
+          { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+          { action: 'exit', code: 0 },
+        ]);
+        const { collected, end } = await runSession(entry, script, {
+          permissionDecision: { behavior: 'allow' },
+        });
+        expect(end.reason).toBe('completed');
+        expect(collected.byType('permission_response')[0].decision).toEqual({ behavior: 'allow' });
+      }
+      // allow_always：suggestions 经 updatedPermissions 原样回写 agent 侧（ARCHITECTURE §6）
+      {
+        const script = writeScript([
+          { action: 'expect_stdin' },
+          {
+            action: 'emit',
+            event: {
+              kind: 'permission_request',
+              id: 'perm_always',
+              toolName: 'Bash',
+              input: { command: 'npm install' },
+              suggestions: SUGGESTIONS,
+              expectResponse: { behavior: 'allow', updatedPermissions: SUGGESTIONS },
+            },
+          },
+          { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+          { action: 'exit', code: 0 },
+        ]);
+        const { collected, end } = await runSession(entry, script, {
+          permissionDecision: { behavior: 'allow', always: true },
+        });
+        expect(end.reason).toBe('completed');
+        expect(collected.byType('permission_response')[0].decision).toEqual({
+          behavior: 'allow',
+          always: true,
+        });
+      }
     });
   });
 }

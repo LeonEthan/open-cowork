@@ -12,6 +12,8 @@
  *
  * ── 脚本动作（每行一个 JSON）──
  *   {"action":"emit","event":{...}}      逻辑事件 → wire 格式（见 formats/ 模块）
+ *   {"action":"emit","event":{...},"detach":true}
+ *                                        发射后不阻塞脚本（#20 并发 permission_request 用）
  *   {"action":"emit_raw","line":{...}}   原样写一行 wire 报文（逃生舱）
  *   {"action":"expect_stdin","match":"可选子串","timeoutMs":10000}
  *                                        等待 stdin 收到一条 user 输入（追问节奏控制）
@@ -23,8 +25,10 @@
  *   thinking {text, chunks?}  思考过程
  *   tool_call {id,name,input} 工具调用开始
  *   tool_result {id,output,isError?} 工具结果
- *   permission_request {id?,toolName,input,reason?}
- *                             发起权限请求并阻塞等决议（claude = control_request/response）
+ *   permission_request {id?,toolName,input,reason?,suggestions?,expectResponse?}
+ *                             发起权限请求并阻塞等决议（claude = control_request/response）；
+ *                             suggestions 原样作 permission_suggestions 发出（#20 回写用）；
+ *                             expectResponse 对回执内层载荷做键级断言（未命中脚本失败退出）
  *   turn_end {status:"completed"|"failed", result?, isError?, usage?}
  *   error {message}           致命错误（claude = error result）
  *
