@@ -14,6 +14,14 @@ let mainWindow: BrowserWindow | null = null;
 let agentProcess: Electron.UtilityProcess | null = null;
 let db: ReturnType<typeof openDatabase> | null = null;
 
+const dataDir = resolveDataDir();
+// OPEN_COWORK_DATA_DIR 的语义是「本实例全部应用数据隔离于此」：
+// 除 SQLite/事件/worktrees 外，Electron userData（localStorage、缓存）也一并迁入，
+// 否则 e2e/并行实例会经系统默认 userData 互相串扰（如主题与折叠状态泄漏到下一次启动）。
+if (process.env.OPEN_COWORK_DATA_DIR) {
+  app.setPath('userData', join(dataDir, 'userdata'));
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -54,7 +62,6 @@ function forkAgentProcess(): void {
 }
 
 void app.whenReady().then(() => {
-  const dataDir = resolveDataDir();
   for (const sub of DATA_SUBDIRS) mkdirSync(join(dataDir, sub), { recursive: true });
   db = openDatabase(join(dataDir, DB_FILE_NAME));
 

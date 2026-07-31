@@ -32,6 +32,8 @@ npm run test:e2e   # Playwright 冒烟（自动先 build，会短暂弹出应用
 <root>/open-cowork.db   全局单一 SQLite（十实体，WAL + FTS5）
 <root>/events/          agent 原始事件流 JSONL 旁路
 <root>/worktrees/       per-task worktree 集中存放
+<root>/userdata/        仅当 OPEN_COWORK_DATA_DIR 显式设置时：Electron userData 一并迁入
+                        （localStorage/缓存完全隔离，e2e 与并行实例互不串扰）
 ```
 
 ### 原生模块（双 ABI）
