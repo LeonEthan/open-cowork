@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FileChange } from '../../../../shared/api';
+import { WorktreePanel } from '../../components/WorktreePanel';
 import { useAppStore } from '../../stores/appStore';
 import { useChangesStore } from '../../stores/changes';
 import { useDataStore } from '../../stores/data';
@@ -243,6 +244,8 @@ function ChangesTab(): React.JSX.Element {
 
   return (
     <div className="changes-panel" data-testid="changes-panel">
+      {/* ── ticket #25：worktree 任务的「回流到原目录 / 清理 worktree」任务级操作 ── */}
+      {task.use_worktree === 1 && <WorktreePanel taskId={task.id} />}
       {task.status === 'awaiting_review' && (
         <div className="changes-taskbar" data-testid="changes-taskbar">
           <span className="changes-count" data-testid="changes-count">

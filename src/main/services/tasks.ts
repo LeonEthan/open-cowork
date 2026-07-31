@@ -1,5 +1,6 @@
 import * as taskRepo from '../db/taskRepo';
 import type { TaskStatus } from '../db/entities';
+import { createTaskWorktree } from '../worktree/worktree';
 import type { ServiceContext } from './index';
 
 /**
@@ -28,14 +29,27 @@ export default function register(ctx: ServiceContext): void {
     if (typeof raw.agentType !== 'string' || raw.agentType.length === 0) {
       throw new Error('tasks:create 需要 agentType');
     }
-    return taskRepo.create(ctx.db, {
+    const task = taskRepo.create(ctx.db, {
       workspaceId: raw.workspaceId,
       prompt: raw.prompt,
       title: typeof raw.title === 'string' ? raw.title : undefined,
       agentType: raw.agentType,
       providerId: typeof raw.providerId === 'string' ? raw.providerId : null,
       model: typeof raw.model === 'string' ? raw.model : null,
+      // ── ticket #25（additive）：opt-in worktree 隔离 ──
+      useWorktree: raw.useWorktree === true,
     });
+    // #25：勾选 worktree 的任务入库后立即建隔离目录 + pin base SHA；
+    // 失败回滚干净（任务行级联删除——此时无任何子行，单 DELETE 即可）并原样抛错。
+    if (task.use_worktree === 1) {
+      try {
+        createTaskWorktree(ctx.db, ctx.dataDir, task.id);
+      } catch (err) {
+        ctx.db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
+        throw err;
+      }
+    }
+    return taskRepo.getById(ctx.db, task.id) ?? task;
   });
 
   ctx.ipcMain.handle('tasks:update-status', (_event, id: unknown, status: unknown) => {
