@@ -13,8 +13,7 @@ import type { ServiceContext } from './index';
  * - 否则按 PATH 逐目录找可执行文件（accessSync X_OK）；
  * - 结果带缓存；agents:refresh 强制重测（手动刷新 IPC）。
  *
- * driverAvailable 静态维护：pi 的 driver 属 #23——未接入前 picker 一律标「即将支持」，
- * #23 落地后把 pi 行改为 true（并删除本注释）。
+ * driverAvailable 静态维护：四家内置 driver 均已接入（claude #19 / codex+opencode #22 / pi #23）。
  */
 
 export interface AgentCatalogEntry {
@@ -51,8 +50,8 @@ export const AGENT_CATALOG: readonly AgentCatalogEntry[] = [
     id: 'pi',
     displayName: 'pi',
     executable: 'pi',
-    envOverride: null,
-    driverAvailable: false, // #23：pi driver 接入后翻转
+    envOverride: 'OPEN_COWORK_PI_CLI', // #23：与 pi driver 的 executablePath 注入点同源
+    driverAvailable: true, // #23：pi driver 已接入（降级审批，静态策略兜底）
   },
 ];
 

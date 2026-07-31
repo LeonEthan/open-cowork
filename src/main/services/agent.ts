@@ -1,3 +1,4 @@
+import * as approvalRepo from '../db/approvalRepo';
 import * as conversationRepo from '../db/conversationRepo';
 import * as taskRepo from '../db/taskRepo';
 import * as workspaceRepo from '../db/workspaceRepo';
@@ -80,6 +81,15 @@ export default function register(ctx: ServiceContext): void {
         model: task.model,
         // #21：provider 密钥与生成配置指向经 env 注入（无 provider 时 undefined）
         env: providerEnv,
+        // #23：pi（降级审批 driver）注入静态策略输入——权限档位 + 「总是允许」
+        // 规则快照，由 pi driver 翻译成 --tools 允许清单；原生 driver 的规则
+        // 口径仍在 main 策略引擎（#20），不经此路。
+        ...(task.agent_type === 'pi'
+          ? {
+              permissionMode: task.permission_mode,
+              alwaysAllowRules: approvalRepo.listRules(ctx.db),
+            }
+          : {}),
       },
     });
     broadcast();
