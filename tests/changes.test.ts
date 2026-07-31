@@ -395,6 +395,18 @@ describe('非 git 快照兜底', () => {
     expect(readFileSync(join(baselineDir(dataDir, task.id), 'a.txt'), 'utf8')).toBe('a1\n');
   });
 
+  it('空工作区起步：baseline 空目录落位，agent 新增文件照常捕获', () => {
+    const root = tmp('oc-ng-'); // 完全空的非 git workspace
+    const { db, dataDir, task } = setup(root);
+    prepareTaskCapture(db, task.id, dataDir);
+    // baseline 目录即使空也必须存在（否则捕获时补建会把现场当基准）
+    expect(existsSync(baselineDir(dataDir, task.id))).toBe(true);
+    writeFileSync(join(root, 'notes.md'), '# hi\n');
+    const rows = captureTaskChanges(db, task.id, dataDir);
+    expect(paths(rows)).toEqual(['notes.md']);
+    expect(rows[0].change_type).toBe('added');
+  });
+
   it('重复 prepare 不覆盖首轮 baseline', () => {
     const root = tmp('oc-ng-');
     writeFileSync(join(root, 'a.txt'), 'first\n');

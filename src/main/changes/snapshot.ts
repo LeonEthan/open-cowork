@@ -49,9 +49,12 @@ export function walkFiles(root: string): Map<string, string> {
 /**
  * 任务开始快照：拷贝工作区到 dest（幂等——已存在即跳过，
  * 重复 prepare（追问轮 / 重启后重试）不覆盖首轮基准）。
+ * 空工作区也必须落 dest 目录本身：目录存在性即「已快照」标记——
+ * 否则捕获时的补建兜底会把 agent 改动后的现场当基准，delta 全丢。
  */
 export function createBaseline(root: string, dest: string): void {
   if (existsSync(dest)) return;
+  mkdirSync(dest, { recursive: true });
   for (const [rel, abs] of walkFiles(root)) {
     const to = join(dest, rel);
     mkdirSync(dirname(to), { recursive: true });
