@@ -30,6 +30,12 @@ export interface DriverHarnessEntry {
   create: () => AgentDriver;
   /** 拼装该 driver 的 start 参数（cwd/prompt 由用例给，这里给 wire 格式接线） */
   makeParams: (scriptPath: string) => Partial<DriverStartParams>;
+  /**
+   * 审批能力（ticket #23 additive）：缺省 'native'（有运行时审批 wire，跑原生审批用例）；
+   * 'degraded'（pi——无审批 wire，审批走启动期静态策略）跳过原生审批用例，
+   * 静态策略覆盖在各家的 contract 文件内（翻译纯函数 + 启动旗标断言）。
+   */
+  approval?: 'native' | 'degraded';
 }
 
 export interface CollectedEvents {
@@ -166,7 +172,12 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
       expect(usage.usage.outputTokens).toBe(22);
     });
 
-    it('事件归一：permission_request → handler → permission_response（allow 与 deny）', async () => {
+    // #23：degraded driver（pi）无运行时审批 wire——原生审批用例跳过，
+    // 审批覆盖走启动期静态策略路径（各家 contract 文件内的翻译/旗标断言）
+    const nativeApproval = entry.approval !== 'degraded';
+
+    if (nativeApproval) {
+      it('事件归一：permission_request → handler → permission_response（allow 与 deny）', async () => {
       for (const decision of [
         { behavior: 'allow' } as PermissionDecision,
         { behavior: 'deny', message: '太危险' } as PermissionDecision,
@@ -200,7 +211,8 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
         expect(res.decision.behavior).toBe(decision.behavior);
         if (decision.behavior === 'deny') expect(res.decision.message).toBe('太危险');
       }
-    });
+      });
+    }
 
     it('取消：运行中 cancel → turn_end(cancelled) + done(cancelled)，进程终止', async () => {
       const script = writeScript([
@@ -290,8 +302,10 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
     });
 
     // ── ticket #20：审批 fail-closed 与回执形状（fake 脚本 expectResponse 做 wire 级断言）──
+    // #23：degraded driver（pi）无审批 wire，以下原生用例跳过（静态策略路径覆盖审批面）
 
-    it('审批 fail-closed：handler 抛错 → deny 且理由回传 agent（ARCHITECTURE §10）', async () => {
+    if (nativeApproval) {
+      it('审批 fail-closed：handler 抛错 → deny 且理由回传 agent（ARCHITECTURE §10）', async () => {
       const script = writeScript([
         { action: 'expect_stdin' },
         {
@@ -410,6 +424,7 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
           always: true,
         });
       }
-    });
+      });
+    }
   });
 }
