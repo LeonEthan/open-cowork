@@ -83,22 +83,28 @@ function jsonlPath(taskId: string, sessionId: string | null): string | null {
   return join(dataDir, 'events', taskId, `${safe}.jsonl`);
 }
 
-/** 写一行旁路（dir: in=入向指令 / out=归一事件）。失败静默——旁路不阻塞主流程。 */
+/**
+ * 写一行旁路（dir: in=入向指令 / out=归一事件）。失败静默——旁路不阻塞主流程。
+ * session_started 之前收与发都先进缓冲，拿到 sessionId 后整批落正式文件，
+ * 保证一个会话的完整收发在同一 .jsonl（排障/回放不拼文件）。
+ */
 function bypassWrite(entry: SessionEntry, dir: 'in' | 'out', payload: unknown): void {
-  const line = `${JSON.stringify({ dir, at: Date.now(), payload })}\n`;
-  if (!entry.sessionId && dir === 'out') {
-    entry.jsonlBuffer.push(line);
+  entry.jsonlBuffer.push(`${JSON.stringify({ dir, at: Date.now(), payload })}\n`);
+  if (entry.sessionId) flushBypass(entry, false);
+}
+
+/** 缓冲落盘：有 sessionId 落正式文件；forceNosession 用于会话未建立即终止的场景 */
+function flushBypass(entry: SessionEntry, forceNosession: boolean): void {
+  if (entry.jsonlBuffer.length === 0) return;
+  const file = jsonlPath(entry.taskId, forceNosession ? null : entry.sessionId);
+  if (!file) {
+    entry.jsonlBuffer = [];
     return;
   }
-  const file = jsonlPath(entry.taskId, entry.sessionId);
-  if (!file) return;
   try {
     mkdirSync(join(file, '..'), { recursive: true });
-    if (entry.jsonlBuffer.length > 0) {
-      appendFileSync(file, entry.jsonlBuffer.join(''), 'utf8');
-      entry.jsonlBuffer = [];
-    }
-    appendFileSync(file, line, 'utf8');
+    appendFileSync(file, entry.jsonlBuffer.join(''), 'utf8');
+    entry.jsonlBuffer = [];
   } catch {
     // 磁盘满等：忽略
   }
@@ -111,6 +117,7 @@ function dispatchEvent(entry: SessionEntry, event: AgentEvent): void {
     entry.sessionId = event.sessionId;
   }
   bypassWrite(entry, 'out', event);
+  if (event.type === 'session_ended') flushBypass(entry, !entry.sessionId);
   // 通道 a：MessageChannel 直连 renderer（实时渲染）
   try {
     rendererPort?.postMessage({ type: 'agent-event', taskId: entry.taskId, event });

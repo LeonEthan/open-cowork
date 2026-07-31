@@ -196,7 +196,7 @@ function appendStreamText(items: ConversationItem[], kind: 'text' | 'thinking', 
   if (last && last.kind === kind && last.streaming) {
     items[items.length - 1] = { ...last, text: last.text + delta };
   } else {
-    items.push(kind === 'text' ? { kind, text: delta, streaming: true } : { kind, text: delta, streaming: true });
+    items.push({ kind, text: delta, streaming: true } as ConversationItem);
   }
 }
 

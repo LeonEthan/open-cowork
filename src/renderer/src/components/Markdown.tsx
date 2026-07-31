@@ -14,7 +14,7 @@ function CodeBlock(props: { lang: string | null; code: string; themeKey: string 
   useEffect(() => {
     let alive = true;
     setHtml(null);
-    void highlightCode(props.code, props.lang).then((h) => {
+    void highlightCode(props.code, props.lang, props.themeKey).then((h) => {
       if (alive) setHtml(h);
     });
     return () => {
