@@ -281,7 +281,11 @@ class OpencodeDriverSession implements DriverSession {
     const listenTimeout = setTimeout(() => {
       rejectListen(new Error(`opencode serve 监听行超时（${LISTEN_LINE_TIMEOUT_MS}ms）`));
     }, LISTEN_LINE_TIMEOUT_MS);
-    void listenLine.finally(() => clearTimeout(listenTimeout));
+    // finally 派生链会带 rejection——用 then(onFulfilled, onRejected) 形式避免未处理拒绝
+    void listenLine.then(
+      () => clearTimeout(listenTimeout),
+      () => clearTimeout(listenTimeout),
+    );
 
     void this.handshake(params, listenLine).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
