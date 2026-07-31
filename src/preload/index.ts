@@ -88,6 +88,17 @@ const api: OpenCoworkApi = {
     };
   },
   // ── ticket #28 end ────────────────────────────────────────────────────
+
+  // ── ticket #24：diff 复查与回滚 ───────────────────────────────────────
+  changes: {
+    list: (taskId: string) => ipcRenderer.invoke('changes:list', taskId),
+    accept: (changeId: string) => ipcRenderer.invoke('changes:accept', changeId),
+    rollback: (changeId: string) => ipcRenderer.invoke('changes:rollback', changeId),
+    restore: (changeId: string) => ipcRenderer.invoke('changes:restore', changeId),
+    acceptAll: (taskId: string) => ipcRenderer.invoke('changes:accept-all', taskId),
+    rollbackAll: (taskId: string) => ipcRenderer.invoke('changes:rollback-all', taskId),
+  },
+  // ── ticket #24 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);

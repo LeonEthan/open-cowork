@@ -3,6 +3,9 @@
  * io 由 cli.mjs 注入（emit/emitRaw/waitStdinLine/sleep/log），
  * 以便纯 Node 测试也能不起进程直接驱动 emitter。
  */
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 export async function runScript(actions, io) {
   for (const action of actions) {
     switch (action?.action) {
@@ -20,6 +23,20 @@ export async function runScript(actions, io) {
         }
         break;
       }
+      // ticket #24 additive：相对 session cwd 写真实文件（制造工作区变更，
+      // diff 复查 e2e 与后续黄金路径都靠它；路径逃逸不受限——harness 仅测试用）
+      case 'write_file': {
+        if (typeof action.path !== 'string' || action.path.length === 0) {
+          throw new Error('write_file 需要 path');
+        }
+        const abs = resolve(process.cwd(), action.path);
+        mkdirSync(dirname(abs), { recursive: true });
+        const content = typeof action.content === 'string' ? action.content : '';
+        if (action.append) appendFileSync(abs, content);
+        else writeFileSync(abs, content);
+        io.log?.(`write_file ${abs}（${content.length} 字符${action.append ? '，append' : ''}）`);
+        break;
+      }
       case 'sleep':
         await io.sleep(action.ms ?? 0);
         break;
@@ -31,3 +48,4 @@ export async function runScript(actions, io) {
     }
   }
 }
+
