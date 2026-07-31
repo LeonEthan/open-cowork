@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. ticket #9 Typora 风格界面设计稿
+  三个布局变体，底部浮条或 ←/→ 切换，?variant=A|B|C；右上角或按 d 切明暗主题
+  A — 两栏·文档优先：任务侧栏（可折叠）+ 居中文档流，diff 行内展开
+  B — 三栏·工作台：任务列表 | 文档流 | 文件/diff 检查栏常驻
+  C — 沉浸单栏 + 抽屉：默认纯文档流，⌘J 唤出任务抽屉，diff 全屏 overlay
+  审批托盘沿用 ticket #8 定稿方案。运行：open prototype/typora-ui.html
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>prototype: 界面设计稿 — open-cowork</title>
+<style>
+  :root {
+    /* Typora github 主题直采（docs/DESIGN.md §2） */
+    --bg: #ffffff; --bg-soft: #fafafa; --bg-sunk: #f4f4f5; --bg-elev: #ffffff;
+    --ink: #333333; --ink-2: #777777; --ink-3: #a1a1aa; --ink-4: #d4d4d8;
+    --line: #e4e4e7; --accent: #4183C4; --accent-soft: #eef4fa;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --r-sm: 8px; --r-md: 12px; --r-pill: 9999px;
+    --font: "Open Sans","Clear Sans","Helvetica Neue",Helvetica,Arial,"PingFang SC",sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  html.dark {
+    /* Typora night 主题直采 */
+    --bg: #363B40; --bg-soft: #2E3033; --bg-sunk: #3f454c; --bg-elev: #3a4046;
+    --ink: #b8bfc6; --ink-2: #8f979e; --ink-3: #6b7278; --ink-4: #4a5056;
+    --line: #454b52; --accent: #6dc1e7; --accent-soft: #3d4a54;
+    --ok: #22c55e; --warn: #f59e0b; --err: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { font-family: var(--font); color: var(--ink); background: var(--bg); font-size: 15px; line-height: 1.75; transition: background .2s, color .2s; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  ::selection { background: var(--accent-soft); }
+
+  /* ========== 任务侧栏（A/B 共用，C 为抽屉） ========== */
+  .sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--line); background: var(--bg-soft); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; transition: margin-left .22s ease; }
+  .sidebar.hidden-a { margin-left: -240px; }
+  .brand { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 4px 10px 12px; display: flex; align-items: center; gap: 7px; }
+  .brand .logo { width: 16px; height: 16px; border-radius: 5px; background: var(--ink); display: inline-block; }
+  .ws-label { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .07em; padding: 10px 10px 5px; }
+  .task { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+  .task:hover { background: var(--bg-sunk); }
+  .task.active { background: var(--bg-sunk); color: var(--ink); font-weight: 500; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot.running { background: var(--accent); animation: pulse 1.6s infinite; }
+  .dot.waiting { background: var(--warn); animation: pulse 1.2s infinite; }
+  .dot.review { background: var(--ok); }
+  .dot.done { background: var(--ink-4); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .task .meta { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+  .sidebar .foot { margin-top: auto; padding: 8px 10px; font-size: 12px; color: var(--ink-3); display: flex; gap: 12px; }
+
+  /* ========== 文档流（Typora 核心） ========== */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .doc-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+  .doc { max-width: 700px; margin: 0 auto; padding: 56px 44px 20px; }
+  .doc-title { font-size: 24px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 4px; }
+  .doc-sub { font-size: 13px; color: var(--ink-3); margin-bottom: 40px; display: flex; gap: 10px; align-items: center; }
+  .chip { font-size: 11.5px; background: var(--bg-sunk); border-radius: var(--r-pill); padding: 2px 10px; color: var(--ink-2); white-space: nowrap; }
+
+  .msg-user { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 32px; color: var(--ink-2); font-size: 14.5px; }
+  .turn { margin-bottom: 36px; }
+  .doc p { margin-bottom: 15px; }
+  .doc strong { font-weight: 600; }
+  .doc code { font-family: var(--mono); font-size: 13px; background: var(--bg-sunk); border-radius: 5px; padding: 1.5px 5px; }
+  .doc pre { font-family: var(--mono); font-size: 13px; line-height: 1.65; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px 18px; margin: 16px 0; overflow-x: auto; }
+  .doc pre .cm { color: var(--ink-3); } .doc pre .kw { color: var(--accent); } .doc pre .st { color: var(--ok); }
+  .doc ul { padding-left: 22px; margin-bottom: 15px; } .doc li { margin-bottom: 4px; }
+
+  /* 思考过程（折叠） */
+  .think { margin: 14px 0; border-left: 2px solid var(--line); padding: 2px 0 2px 16px; }
+  .think summary { font-size: 12.5px; color: var(--ink-3); cursor: pointer; list-style: none; user-select: none; }
+  .think summary:hover { color: var(--ink-2); }
+  .think .think-body { font-size: 13px; color: var(--ink-3); line-height: 1.7; padding-top: 8px; }
+
+  /* 工具调用极简行（#8 定稿） */
+  .tool-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; color: var(--ink-2); }
+  .tool-line .name { font-family: var(--mono); font-weight: 600; font-size: 12.5px; color: var(--ink); }
+  .tool-line .tgt { color: var(--ink-3); font-family: var(--mono); font-size: 12.5px; }
+  .tool-line .st { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+  .tool-line .st.ok { color: var(--ok); } .tool-line .st.wait { color: var(--warn); }
+  .tool-group { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 8px 0; margin: 18px 0; }
+
+  /* diff 行内展开（变体 A/C 用） */
+  .diff-inline { margin: 14px 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+  .diff-inline .dh { display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-size: 12.5px; color: var(--ink-2); background: var(--bg-soft); }
+  .diff-inline .dh .adds { color: var(--ok); font-family: var(--mono); } .diff-inline .dh .dels { color: var(--err); font-family: var(--mono); }
+  .diff-inline pre { border: none; border-radius: 0; margin: 0; font-size: 12.5px; }
+  .d-add { color: var(--ok); } .d-del { color: var(--err); } .d-ctx { color: var(--ink-3); }
+
+  /* 流式光标 */
+  .cursor { display: inline-block; width: 7px; height: 16px; background: var(--ink-3); border-radius: 2px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ========== 审批托盘（#8 定稿） ========== */
+  .dock { border-top: 1px solid var(--line); background: var(--bg-soft); padding: 10px 24px 6px; }
+  .dock-inner { max-width: 700px; margin: 0 auto; }
+  .dock-title { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  .dock-title .count { background: var(--warn); color: #fff; border-radius: var(--r-pill); font-size: 10.5px; padding: 1px 8px; margin-left: 6px; }
+  .dock-card { background: var(--bg-elev); border: 1px solid var(--warn); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 8px; }
+  .dock-card .cmd { font-family: var(--mono); font-size: 12.5px; background: var(--bg-sunk); border-radius: 6px; padding: 6px 10px; margin: 8px 0 10px; }
+  .appr-actions { display: flex; gap: 8px; }
+  .btn { border: 1px solid var(--line); background: var(--bg-elev); border-radius: var(--r-sm); padding: 6px 14px; font-size: 13px; color: var(--ink-2); transition: all .12s; }
+  .btn:hover { border-color: var(--ink-3); color: var(--ink); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .btn kbd { font-family: var(--mono); font-size: 11px; opacity: .55; margin-left: 6px; }
+
+  /* ========== 输入区 ========== */
+  .inputbar { padding: 12px 24px 16px; background: var(--bg); }
+  .inputbox { max-width: 700px; margin: 0 auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elev); padding: 12px 14px; transition: border-color .15s; }
+  .inputbox:focus-within { border-color: var(--ink-3); }
+  .inputbox .ta { color: var(--ink-3); font-size: 14px; min-height: 22px; }
+  .input-meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .input-meta .spacer { margin-left: auto; }
+  .chip-btn { font-size: 11.5px; background: var(--bg-sunk); border: none; border-radius: var(--r-pill); padding: 3px 11px; color: var(--ink-2); }
+  .chip-btn:hover { background: var(--ink-4); }
+  .chip-btn.warn { color: var(--warn); }
+  .icon-btn { background: none; border: none; font-size: 15px; color: var(--ink-3); padding: 2px 6px; border-radius: 6px; }
+  .icon-btn:hover { color: var(--ink); background: var(--bg-sunk); }
+
+  /* ========== 变体 B：右侧检查栏 ========== */
+  .inspector { width: 320px; flex-shrink: 0; border-left: 1px solid var(--line); background: var(--bg-soft); display: flex; flex-direction: column; }
+  .insp-tabs { display: flex; gap: 2px; padding: 10px 12px 0; }
+  .insp-tab { font-size: 12.5px; color: var(--ink-3); padding: 6px 12px; border-radius: var(--r-sm) var(--r-sm) 0 0; border: none; background: none; }
+  .insp-tab.active { color: var(--ink); background: var(--bg-elev); font-weight: 500; }
+  .insp-body { flex: 1; overflow-y: auto; background: var(--bg-elev); border-top: 1px solid var(--line); padding: 12px; }
+  .file-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--r-sm); font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .file-row:hover { background: var(--bg-sunk); }
+  .file-row .fm { font-family: var(--mono); font-size: 12px; }
+  .file-row .chg { margin-left: auto; font-family: var(--mono); font-size: 11px; }
+  .insp-diff { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; }
+
+  /* ========== 变体 C：抽屉与 overlay ========== */
+  .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 60; }
+  .drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; background: var(--bg-soft); border-right: 1px solid var(--line); transform: translateX(-100%); transition: transform .22s ease; z-index: 61; padding: 14px 10px; }
+  html.drawer-open .drawer { transform: translateX(0); }
+  html.drawer-open .drawer-mask { opacity: 1; pointer-events: auto; }
+  .overlay-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; z-index: 70; align-items: center; justify-content: center; }
+  html.overlay-open .overlay-mask { display: flex; }
+  .overlay { width: min(760px, 90vw); max-height: 80vh; background: var(--bg-elev); border-radius: var(--r-md); overflow: hidden; display: flex; flex-direction: column; }
+  .overlay .oh { padding: 14px 20px; border-bottom: 1px solid var(--line); font-size: 13.5px; display: flex; align-items: center; gap: 10px; }
+  .overlay .ob { overflow-y: auto; padding: 16px 20px; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; }
+  .hamburger { position: fixed; top: 14px; left: 14px; z-index: 55; background: none; border: none; font-size: 17px; color: var(--ink-3); padding: 6px 8px; border-radius: var(--r-sm); }
+  .hamburger:hover { background: var(--bg-sunk); color: var(--ink); }
+
+  /* ========== 顶栏（A/B）与主题切换 ========== */
+  .topbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .topbar .t { font-size: 13.5px; font-weight: 550; }
+  .topbar .spacer { margin-left: auto; }
+  .theme-fab { position: fixed; top: 12px; right: 14px; z-index: 80; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 6px 12px; font-size: 12.5px; color: var(--ink-2); }
+  .theme-fab:hover { border-color: var(--ink-3); }
+
+  /* ========== 切换浮条 ========== */
+  .switcher { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #18181b; color: #fafafa; border-radius: var(--r-pill); padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.35); z-index: 90; }
+  html.dark .switcher { background: #fafafa; color: #18181b; }
+  .switcher button { background: none; border: none; color: #a1a1aa; font-size: 15px; padding: 4px 10px; border-radius: var(--r-pill); }
+  .switcher button:hover { color: #fff; background: #27272a; }
+  html.dark .switcher button:hover { color: #000; background: #e4e4e7; }
+  .switcher .label { padding: 0 10px; font-size: 12.5px; min-width: 200px; text-align: center; color: #d4d4d8; }
+  html.dark .switcher .label { color: #52525b; }
+  .switcher .label b { color: #fff; } html.dark .switcher .label b { color: #000; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<button class="theme-fab" onclick="toggleTheme()">◐ 主题 (d)</button>
+
+<script>
+/* ================= mock 数据 ================= */
+const TASKS = [
+  { name: "添加 ESLint 配置", state: "waiting", meta: "2 待批" },
+  { name: "重构 auth 模块", state: "running", meta: "运行中" },
+  { name: "写 README 英文版", state: "review", meta: "待复查" },
+  { name: "升级依赖到 React 19", state: "done", meta: "" },
+];
+const FILES = [
+  { path: ".eslintrc.json", adds: 8, dels: 0, new: true },
+  { path: "src/utils/date.ts", adds: 12, dels: 9 },
+  { path: "src/api/client.ts", adds: 3, dels: 3 },
+  { path: "package.json", adds: 1, dels: 0 },
+];
+const DIFF = `@@ src/utils/date.ts @@
+ export function formatDate(d: Date) {
+<span class="d-del">-  return d.toLocaleString();  // 本地化不一致</span>
+<span class="d-add">+  return dayjs(d).format("YYYY-MM-DD");</span>
+ }
+<span class="d-ctx"> // 其余 11 行未改动…</span>`;
+
+/* ================= 共用片段 ================= */
+const h = (x) => x;
+function sidebarTasks() {
+  return `<div class="brand"><span class="logo"></span>open-cowork</div>
+    <div class="ws-label">~/projects/open-cowork</div>` +
+    TASKS.map((t, i) => `<div class="task ${i === 0 ? "active" : ""}"><span class="dot ${t.state}"></span>${t.name}<span class="meta">${t.meta}</span></div>`).join("") +
+    `<div class="foot"><span>⌘J 任务</span><span>⌘K 命令</span></div>`;
+}
+function docHTML(opts) {
+  return `<div class="doc">
+    <div class="doc-title">添加 ESLint 配置</div>
+    <div class="doc-sub"><span class="chip">claude · glm-4.6</span><span>worktree: feat/eslint</span><span>3 轮对话 · 12.4k tokens</span></div>
+    <div class="msg-user">帮我给项目加上 ESLint 配置，装依赖，然后把现有的 lint 错误修掉。</div>
+    <div class="turn">
+      <details class="think"><summary>思考过程 · 4.2s</summary><div class="think-body">项目用 TypeScript + ESM，没有现存配置。eslint:recommended 打底，no-console 降级为 warn 避免误伤脚本文件；--fix 能修掉大部分风格类错误，剩下的需要人工看。</div></details>
+      <p>好的，计划如下：</p>
+      <ul><li>创建 <code>.eslintrc.json</code>（推荐规则集 + 两条项目定制）</li><li>安装 <code>eslint</code> 开发依赖</li><li>运行 <code>--fix</code> 自动修复，预计影响 17 个文件</li></ul>
+      <div class="tool-group">
+        <div class="tool-line"><span>📝</span><span class="name">WriteFile</span><span class="tgt">.eslintrc.json</span><span class="st ok">已批准 · 已完成</span></div>
+        <div class="tool-line"><span>⌨️</span><span class="name">Bash</span><span class="tgt">npm install -D eslint</span><span class="st ok">已批准 · 已完成</span></div>
+        <div class="tool-line"><span>⌨️</span><span class="name">Bash</span><span class="tgt">npx eslint . --fix</span><span class="st wait">等待审批…</span></div>
+      </div>
+      <p>配置文件已创建：</p>
+      <pre><span class="kw">{</span>
+  <span class="st">"extends"</span>: <span class="st">"eslint:recommended"</span>,  <span class="cm">// 推荐规则集</span>
+  <span class="st">"rules"</span>: { <span class="st">"no-console"</span>: <span class="st">"warn"</span>, <span class="st">"eqeqeq"</span>: <span class="st">"error"</span> }
+<span class="kw">}</span></pre>
+      ${opts.inlineDiff ? `<div class="diff-inline"><div class="dh">📄 src/utils/date.ts <span style="margin-left:auto"><span class="adds">+12</span> <span class="dels">−9</span></span></div><pre>${DIFF}</pre></div>` : ""}
+      <p>还剩 <strong>3 处</strong> 需要人工确认的错误，我先把它们列出来<span class="cursor"></span></p>
+    </div>
+  </div>`;
+}
+function dockHTML() {
+  return `<div class="dock"><div class="dock-inner">
+    <div class="dock-title">待审批<span class="count">2</span></div>
+    <div class="dock-card">
+      <div style="font-size:13px;color:var(--ink-2)"><b>⌨️ Bash</b> · 执行自动修复（会修改 17 个文件）</div>
+      <div class="cmd">npx eslint . --fix</div>
+      <div class="appr-actions">
+        <button class="btn primary">允许一次<kbd>⌘1</kbd></button>
+        <button class="btn">总是允许「Bash: npx *」<kbd>⌘2</kbd></button>
+        <button class="btn">拒绝<kbd>⌘3</kbd></button>
+      </div>
+    </div>
+  </div></div>`;
+}
+function inputHTML(modeChip) {
+  return `<div class="inputbar"><div class="inputbox">
+    <div class="ta">输入消息，或继续指导 agent…</div>
+    <div class="input-meta">
+      <button class="chip-btn">claude · glm-4.6 ▾</button>
+      <button class="icon-btn" title="附件">📎</button>
+      <span class="spacer"></span>
+      <button class="chip-btn warn">⚙ ${modeChip || "自动"} ▾</button>
+      <button class="chip-btn" style="background:var(--ink);color:var(--bg)">发送 ⏎</button>
+    </div>
+  </div></div>`;
+}
+function topbarHTML(title, extra) {
+  return `<div class="topbar">${extra || ""}<span class="t">${title}</span><span class="spacer"></span>
+    <span class="chip">claude · glm-4.6</span></div>`;
+}
+
+/* ================= 变体 A：两栏·文档优先 ================= */
+let aSidebarHidden = false;
+function renderA() {
+  return `<div style="display:flex;height:100vh">
+    <div class="sidebar ${aSidebarHidden ? "hidden-a" : ""}" id="sb-a">${sidebarTasks()}</div>
+    <div class="main">
+      ${topbarHTML("添加 ESLint 配置", `<button class="icon-btn" onclick="aSidebarHidden=!aSidebarHidden;render()">☰</button>`)}
+      <div class="doc-scroll">${docHTML({ inlineDiff: true })}</div>
+      ${dockHTML()}${inputHTML()}
+    </div></div>`;
+}
+
+/* ================= 变体 B：三栏·工作台 ================= */
+function renderB() {
+  return `<div style="display:flex;height:100vh">
+    <div class="sidebar">${sidebarTasks()}</div>
+    <div class="main">
+      ${topbarHTML("添加 ESLint 配置")}
+      <div class="doc-scroll">${docHTML({ inlineDiff: false })}</div>
+      ${dockHTML()}${inputHTML()}
+    </div>
+    <div class="inspector">
+      <div class="insp-tabs"><button class="insp-tab active">变更 (4)</button><button class="insp-tab">文件</button><button class="insp-tab">终端</button></div>
+      <div class="insp-body">
+        ${FILES.map(f => `<div class="file-row"><span class="fm">${f.new ? "🆕" : "📄"}</span>${f.path}<span class="chg"><span class="d-add">+${f.adds}</span> <span class="d-del">−${f.dels}</span></span></div>`).join("")}
+        <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:6px"><div class="insp-diff">${DIFF}</div></div>
+      </div>
+    </div></div>`;
+}
+
+/* ================= 变体 C：沉浸单栏 + 抽屉 ================= */
+function renderC() {
+  return `<button class="hamburger" onclick="document.documentElement.classList.toggle('drawer-open')">☰</button>
+    <div class="drawer-mask" onclick="document.documentElement.classList.remove('drawer-open')"></div>
+    <div class="drawer">${sidebarTasks()}</div>
+    <div class="overlay-mask" onclick="if(event.target===this)document.documentElement.classList.remove('overlay-open')">
+      <div class="overlay"><div class="oh">📄 src/utils/date.ts <span style="margin-left:auto"><span class="d-add">+12</span> <span class="d-del">−9</span></span>
+        <button class="btn">接受</button><button class="btn">回滚</button>
+        <button class="icon-btn" onclick="document.documentElement.classList.remove('overlay-open')">✕</button></div>
+        <div class="ob">${DIFF}</div></div>
+    </div>
+    <div class="main" style="height:100vh">
+      <div class="doc-scroll">${docHTML({ inlineDiff: true }).replace('<p>还剩', `<p><a href="#" onclick="document.documentElement.classList.add('overlay-open');return false" style="color:var(--accent)">查看全部 4 个文件变更 ⇱</a></p><p>还剩`)}
+      <div style="max-width:700px;margin:0 auto;padding:0 44px 30px;color:var(--ink-3);font-size:12.5px">⌘J 任务抽屉 · 点击链接看 diff overlay</div></div>
+      ${dockHTML()}${inputHTML()}
+    </div>`;
+}
+
+/* ================= 切换/主题 ================= */
+const VARIANTS = { A: "A — 两栏·文档优先", B: "B — 三栏·工作台", C: "C — 沉浸单栏 + 抽屉" };
+function currentVariant() { return new URLSearchParams(location.search).get("variant") || "A"; }
+function render() {
+  const v = currentVariant();
+  const body = v === "B" ? renderB() : v === "C" ? renderC() : renderA();
+  document.getElementById("root").innerHTML = body + `<div class="switcher">
+    <button onclick="cycle(-1)">←</button><span class="label"><b>${VARIANTS[v]}</b></span><button onclick="cycle(1)">→</button></div>`;
+}
+function cycle(dir) {
+  const keys = Object.keys(VARIANTS);
+  const i = (keys.indexOf(currentVariant()) + dir + keys.length) % keys.length;
+  const p = new URLSearchParams(location.search); p.set("variant", keys[i]);
+  history.replaceState(null, "", "?" + p.toString());
+  document.documentElement.classList.remove("drawer-open", "overlay-open");
+  render();
+}
+function toggleTheme() { document.documentElement.classList.toggle("dark"); }
+if (new URLSearchParams(location.search).get("theme") === "dark") document.documentElement.classList.add("dark");
+document.addEventListener("keydown", (e) => {
+  if (/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+  if (e.key === "d" && !e.metaKey) toggleTheme();
+  if ((e.metaKey || e.ctrlKey) && e.key === "j") { e.preventDefault(); document.documentElement.classList.toggle("drawer-open"); }
+});
+render();
+</script>
+</body>
+</html>
