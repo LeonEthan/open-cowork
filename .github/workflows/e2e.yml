@@ -1,0 +1,32 @@
+# E2E 黄金路径 smoke（ticket #29）
+#
+# macos runner 起真实 Electron（macOS runner 自带窗口服务器，无需 xvfb）；
+# Electron 应用由 @playwright/test 的 _electron 驱动，不需要 playwright install
+# 浏览器下载。npm ci 触发 postinstall（原生模块双 ABI：Node 副本 + Electron 重编译）。
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  golden-path:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (postinstall 重建原生模块 ABI)
+        run: npm ci
+
+      - name: Build (electron-vite → out/)
+        run: npm run build
+
+      - name: Golden path smoke
+        run: npx playwright test e2e/golden-path.spec.ts
