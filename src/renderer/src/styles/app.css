@@ -806,3 +806,181 @@ button:disabled {
   margin-top: 8px;
 }
 /* ── ticket #35 end ─────────────────────────────────────── */
+
+/* ── ticket #36 ─────────────────────────────────────────────
+   Composer 升格与空态 hero（§1/§3/§4）：
+   - composer 脱离文档流底部槽位：审批托盘 + composer 收进底部 sticky dock
+     （托盘在上、composer 在下，相对位置关系保持），composer = 约 760px 底部
+     居中悬浮卡片（16px 圆角档 --radius-3、边框分层零阴影，§3 宽度独立约定）；
+   - 三行结构：上下文行 → 输入区 → 动作行（权限档位 chip 居左，视觉对齐 Codex
+     "Approve for me" 位；agent/provider/model 合并 picker 与发送键右置）；
+   - 空态 hero：居中文字标记 + 带 workspace 名的问句 + starter 卡片
+     （16px 圆角 + 1px 边框，§4 功能件）；
+   - 全部引用 token，明暗双主题通用；动效零新增（§5）。 */
+
+/* 内容栏纵向 flex：短内容时 dock 借 margin-top:auto 落底，长内容时 sticky
+   bottom 悬浮（100vh - 开关行约 40px - 上 padding 32px ≈ dock 自然落 viewport 底） */
+.content-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 72px);
+}
+.task-article,
+.home-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 底部 dock：sticky bottom 悬浮于文档流之上；底色遮罩防滚动文字从缝隙透出 */
+.composer-dock {
+  margin-top: auto;
+  margin-inline: auto;
+  position: sticky;
+  bottom: 16px;
+  z-index: 15;
+  width: min(760px, 100%);
+  padding-top: 8px;
+  background: var(--bg);
+}
+
+/* composer 悬浮卡片：16px 圆角档（§3：仅本卡片与 starter 卡片可用；
+   覆盖 #19 分组的 --radius-2，原块不改） */
+.composer-box {
+  border-radius: var(--radius-3);
+}
+
+/* 第一行·上下文行（workspace / Local 环境 / 原目录·worktree chip） */
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip.mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+/* workspace 切换：chip 形 select（首页 composer 上下文行） */
+.chip-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--bg);
+  max-width: 220px;
+}
+/* worktree 切换 chip 的选中态（原目录 ⇄ worktree 隔离） */
+.chip-btn[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 第三行·动作行：权限档位 chip 居左，合并 chip/水位环/发送键右置
+   （justify-content:flex-end 沿用 #19 原块，这里只补对齐与间距） */
+.composer-actions {
+  align-items: center;
+  gap: 6px;
+}
+.composer-actions-flex {
+  flex: 1;
+}
+
+/* agent + provider/model 合并 picker（动作行右置单一入口；
+   弹出层向上展开，边框分层零阴影，§3） */
+.agent-model-picker {
+  position: relative;
+}
+.picker-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 16;
+  width: 280px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.picker-popover .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.picker-popover .field-label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.picker-popover select {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--font-size-ui);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+}
+.picker-popover select:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+
+/* 空态 hero（§7 克制：文字标记 + 问句 + starter 卡片，无插画/渐变/徽章墙） */
+.home-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 48px 0 24px;
+}
+.hero-logo {
+  font-size: 24px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+.hero-question {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(760px, 100%);
+}
+.starter-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+.starter-card:hover {
+  border-color: var(--ink-3);
+}
+.starter-label {
+  font-size: 14px;
+  color: var(--ink);
+}
+.starter-hint {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.hero-add {
+  margin-top: 8px;
+}
+/* ── ticket #36 end ─────────────────────────────────────── */

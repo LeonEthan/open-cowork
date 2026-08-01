@@ -5,9 +5,12 @@
  */
 
 :root {
-  /* 圆角三档（§3），第四种圆角为禁区 */
+  /* 圆角四档（§3），第五种圆角为禁区；
+     16px 档（--radius-3）仅 composer 悬浮卡片与 starter 卡片使用（§3/ticket #36），
+     其余组件限 8/12/pill 三档 */
   --radius-1: 8px;
   --radius-2: 12px;
+  --radius-3: 16px;
   --radius-pill: 9999px;
 
   /* 字体（§3） */

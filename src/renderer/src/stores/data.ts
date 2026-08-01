@@ -26,7 +26,8 @@ interface DataState {
   createTask: (input: CreateTaskInput) => Promise<Task | null>;
 }
 
-function errMessage(e: unknown): string {
+/** ticket #36（additive 导出）：IPC 错误消息剥壳——首页 composer 建任务流程同口径复用 */
+export function errMessage(e: unknown): string {
   // Electron IPC 包装的错误形如 "Error invoking remote method 'x': Error: <原始消息>"
   const msg = e instanceof Error ? e.message : String(e);
   const idx = msg.lastIndexOf('Error: ');
