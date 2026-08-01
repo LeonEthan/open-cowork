@@ -42,6 +42,7 @@
 - 正文字体栈（Typora github 主题同款）：`"Open Sans","Clear Sans","Helvetica Neue",Helvetica,Arial,"PingFang SC",sans-serif`。
 - 等宽：`"SF Mono","JetBrains Mono",ui-monospace,monospace`。
 - 基准 16px，行高 1.6；UI 辅文 13–14px；文档标题 24px/650。
+- 用户消息 15px（文档流内说话人区分，次于正文一档）；元信息/徽标 10.5–12.5px（任务元信息、工具行、用量灰字、计数徽标）——第四档是 §7.3 信息密度约定的具名化，新组件引用字号须落在以上档位内。
 - 内容栏 max-width 860px（Typora `#write`），水平留白 ≥30px，文档流底部留白 ≥100px。
 - 圆角三档：8px / 12px / 9999px（pill）。**零阴影**——浮层（命令面板、切换器除外）一律用边框而非阴影分层。
 
