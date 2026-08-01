@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
@@ -179,27 +179,48 @@ export type VersionRunner = (cmd: string, args: string[]) => Promise<VersionProb
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 
-/** 生产实现：execFile 带超时，绝不抛错（版本号只是元数据） */
+/**
+ * 生产实现：spawn 带超时，绝不抛错（版本号只是元数据）。
+ * stdin 置 ignore（立即 EOF）：真实 CLI 的 --version 本就不读 stdin；被探测为
+ * 「任何调用都当会话」的 CLI（如 e2e 的 fake harness）经 stdin EOF 立刻退出，
+ * 避免探测挂到超时（也不给脚本动作执行窗口）。
+ */
 const defaultRun: VersionRunner = (cmd, args) =>
   new Promise((resolve) => {
-    execFile(
-      cmd,
-      args,
-      { timeout: VERSION_PROBE_TIMEOUT_MS, maxBuffer: 256 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          const killed = (err as { killed?: boolean }).killed === true;
-          resolve({
-            code: typeof err.code === 'number' ? err.code : null,
-            stdout: String(stdout ?? ''),
-            stderr: String(stderr ?? ''),
-            error: killed ? `超时（${VERSION_PROBE_TIMEOUT_MS}ms）` : err.message,
-          });
-          return;
-        }
-        resolve({ code: 0, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
-      },
-    );
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const finish = (r: VersionProbeResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(r);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // 已退出
+      }
+      finish({ code: null, stdout, stderr, error: `超时（${VERSION_PROBE_TIMEOUT_MS}ms）` });
+    }, VERSION_PROBE_TIMEOUT_MS);
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (c: string) => {
+      stdout += c;
+      if (stdout.length > 256 * 1024) child.stdout.destroy();
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (c: string) => {
+      stderr += c;
+      if (stderr.length > 256 * 1024) child.stderr.destroy();
+    });
+    child.once('error', (err) => {
+      finish({ code: null, stdout, stderr, error: err.message });
+    });
+    child.once('exit', (code) => {
+      finish({ code, stdout, stderr });
+    });
   });
 
 export interface ProbeDeps {
