@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * diff 复查与回滚（ticket #24）端到端：
@@ -38,7 +39,7 @@ async function launchWithScript(dataDir: string, script: unknown[]): Promise<Ele
   });
 }
 
-/** 添加 workspace + 经 UI 建任务（复用 #19 的辅助模式） */
+/** 添加 workspace + 经首页 composer 建任务并开跑（ticket #36：create+start 一步到位） */
 async function setupWorkspaceAndTask(
   app: ElectronApplication,
   wsDir: string,
@@ -47,16 +48,8 @@ async function setupWorkspaceAndTask(
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
-  await win.getByTestId('task-agent-select').selectOption('claude-code');
-  await win.getByTestId('task-create-submit').click();
-  await expect(win.getByTestId('task-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
+  await createTaskViaComposer(win, { prompt, agent: 'claude-code' });
 }
 
 test('git workspace：两文件变更 → diff 呈现 → 文件级回滚/恢复 → 全部接受 → done，无自动 commit', async () => {
@@ -86,7 +79,7 @@ test('git workspace：两文件变更 → diff 呈现 → 文件级回滚/恢复
   try {
     await setupWorkspaceAndTask(app, wsDir, '改文件两处处');
     const win = (await app.windows())[0];
-    await win.getByTestId('send-button').click();
+    // composer 发送即开跑（ticket #36）
 
     // turn_end → 捕获 → awaiting_review
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
@@ -164,7 +157,7 @@ test('非 git workspace：快照兜底复查 → 全部回滚 → done → 快�
   try {
     await setupWorkspaceAndTask(app, wsDir, '记笔记到文件');
     const win = (await app.windows())[0];
-    await win.getByTestId('send-button').click();
+    // composer 发送即开跑（ticket #36）
 
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
       timeout: 15_000,

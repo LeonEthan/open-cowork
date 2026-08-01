@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { settingsSections } from '../extensions/registry';
 import { useInspectorVisible } from '../hooks/useInspectorVisible';
+import { MODE_LABELS, MODE_NEXT, MODE_TITLES } from '../lib/permissionMode';
 import { STATUS_LABELS, agentLabel, statusDotClass } from '../lib/taskStatus';
 import { useAppStore } from '../stores/appStore';
 import { useConversationStore } from '../stores/conversation';
@@ -13,6 +14,7 @@ import type { PermissionMode, TaskListItem } from '../../../shared/api';
 import { ApprovalTray } from './ApprovalTray';
 import { ContentControls } from './ContentControls';
 import { ContextRing } from './ContextRing';
+import { HomeView } from './HomeView';
 import { Markdown } from './Markdown';
 
 /**
@@ -20,11 +22,13 @@ import { Markdown } from './Markdown';
  * - 设置视图：区块经 extensions/settings-sections/ 自动注册；
  * - 选中任务（ticket #19）：文档式会话流——用户消息、agent markdown 流式回复、
  *   工具调用极简行（icon + 名称 + 目标 + 状态，§4）、思考过程左边线折叠（§4）、
- *   failed 态原因 + 重试；底部输入区：单圆角框 + agent/model chip + 发送/取消键；
+ *   failed 态原因 + 重试；
  * - ticket #27：每轮末尾用量灰字（token + 折算金额，口径在 tooltip）；
- *   输入区 chips 行末尾 context 水位环（>80% 警告 + 压缩建议）；
+ *   动作行末尾 context 水位环（>80% 警告 + 压缩建议）；
  * - ticket #34：内容区右上角检查栏开关（小图标 + ⌘J；变更新内容时带状态点提示）；
- * - 未选中任务：保持空态（文案克制，§7）。
+ * - ticket #36：composer 升格——审批托盘 + composer 收进底部 sticky dock
+ *   （composer = 760px 底部居中悬浮卡片，16px 圆角档、三行结构，§3/§4）；
+ *   未选中任务 = 首页空态（hero + starter 卡片 + 创建 composer，见 HomeView）。
  */
 
 export function DocumentFlow(): React.JSX.Element {
@@ -73,11 +77,8 @@ export function DocumentFlow(): React.JSX.Element {
         ) : task ? (
           <TaskConversationView key={task.id} task={task} />
         ) : (
-          <>
-            <h1 className="doc-title">开始</h1>
-            <p className="muted">还没有进行中的任务。</p>
-            <p className="muted">创建任务后，对话将以文档流呈现在这里。</p>
-          </>
+          // ticket #36：首页空态 = hero + starter 卡片 + 创建 composer（创建内联化）
+          <HomeView />
         )}
       </div>
     </main>
@@ -124,7 +125,7 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
   const themeKey = `${themeMode}:${document.documentElement.dataset.theme ?? ''}`;
 
   return (
-    <article data-testid="current-task">
+    <article className="task-article" data-testid="current-task">
       <h1 className="doc-title">{task.title}</h1>
       <p className="task-detail-status">
         <span className={statusDotClass(task.status)} data-testid="detail-status-dot" />
@@ -148,9 +149,12 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
         <div ref={endRef} />
       </div>
 
-      {/* ticket #20：审批托盘——输入区上方底部托盘，有待审批时出现（⌘1/2/3） */}
-      <ApprovalTray task={task} />
-      <Composer task={task} />
+      {/* ticket #36（§3/§4）：审批托盘 + composer 收进底部 sticky dock——
+          托盘保持在 composer 上方（相对位置关系不变），composer 为 760px 悬浮卡片 */}
+      <div className="composer-dock">
+        <ApprovalTray task={task} />
+        <Composer task={task} />
+      </div>
     </article>
   );
 }
@@ -295,26 +299,12 @@ function FailedBanner({ task }: { task: TaskListItem }): React.JSX.Element {
 
 // ── 输入区 ───────────────────────────────────────────────────────────────
 
-/** ticket #20：权限三档循环（per-task 持久化 tasks.permission_mode，IPC tasks:set-permission-mode） */
-const MODE_NEXT: Record<PermissionMode, PermissionMode> = {
-  readonly: 'auto',
-  auto: 'full',
-  full: 'readonly',
-};
-const MODE_LABELS: Record<PermissionMode, string> = {
-  readonly: '只读',
-  auto: '自动',
-  full: '放权',
-};
-const MODE_TITLES: Record<PermissionMode, string> = {
-  readonly: '权限档位：只读——写/命令类请求一律自动拒绝',
-  auto: '权限档位：自动——命中「总是允许」规则放行，其余逐条审批',
-  full: '权限档位：完全放权——一律放行，不再打扰',
-};
-
 function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const appendUserMessage = useConversationStore((s) => s.appendUserMessage);
   const refreshAll = useDataStore((s) => s.refreshAll);
+  // ticket #36：create 成功而 start 失败的跨视图提示（首页 composer 写入；重试成功即清）
+  const composerNotice = useUiStore((s) => s.composerNotice);
+  const setComposerNotice = useUiStore((s) => s.setComposerNotice);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -351,6 +341,7 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
         appendUserMessage(task.id, text.trim());
         setText('');
       }
+      setComposerNotice(null); // 重试成功，清除跨视图提示
       await refreshAll(); // 状态迁移（→running）立即反映到侧栏/状态行
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -366,6 +357,7 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
     setErr(null);
     try {
       await api.agent.cancel(task.id);
+      setComposerNotice(null);
       await refreshAll();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -391,37 +383,27 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
               ? '任务已失败——先点上方「重试」'
               : '任务已结束';
 
+  // ticket #36：create+start 流程中 start 失败的提示仅属于本任务
+  const notice = composerNotice?.taskId === task.id ? composerNotice.message : null;
+
   return (
     <div className="composer" data-testid="composer">
       <div className="composer-box">
-        <div className="composer-chips">
-          <span className="chip" data-testid="composer-agent-chip">
-            {agentLabel(task.agent_type)}
+        {/* 第一行·上下文行（ticket #36，§4）：该任务的 workspace / Local 环境 / worktree 分支 */}
+        <div className="composer-context">
+          <span className="chip" data-testid="composer-workspace-chip">
+            {task.workspace_name}
           </span>
-          {task.provider_name && (
-            <span className="chip" data-testid="composer-provider-chip">
-              {task.provider_name}
+          <span className="chip" data-testid="composer-env-chip" title="本地运行，无云端环境">
+            Local
+          </span>
+          {task.use_worktree === 1 && (
+            <span className="chip mono" data-testid="composer-branch-chip" title="worktree 隔离分支">
+              cowork/{task.id}
             </span>
           )}
-          {task.model && (
-            <span className="chip" data-testid="composer-model-chip">
-              {task.model}
-            </span>
-          )}
-          {/* ticket #20：权限档位 chip（三档循环切换，per-task 持久化） */}
-          <button
-            type="button"
-            className="chip chip-btn"
-            data-testid="permission-mode-chip"
-            data-mode={mode}
-            title={MODE_TITLES[mode]}
-            onClick={() => void cycleMode()}
-          >
-            ⚙ {MODE_LABELS[mode]}
-          </button>
-          {/* ticket #27：context 水位环（chips 行末尾右置；>80% 警告 + 压缩建议） */}
-          <ContextRing taskId={task.id} />
         </div>
+        {/* 第二行·输入区 */}
         <textarea
           className="composer-input"
           data-testid="composer-input"
@@ -437,7 +419,30 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
             }
           }}
         />
+        {/* 第三行·动作行（§4）：权限档位 chip ｜ agent/provider/model 合并 chip +
+            context 水位环 + 发送/取消（右置） */}
         <div className="composer-actions">
+          {/* ticket #20：权限档位 chip（三档循环切换，per-task 持久化） */}
+          <button
+            type="button"
+            className="chip chip-btn"
+            data-testid="permission-mode-chip"
+            data-mode={mode}
+            title={MODE_TITLES[mode]}
+            onClick={() => void cycleMode()}
+          >
+            ⚙ {MODE_LABELS[mode]}
+          </button>
+          <span className="composer-actions-flex" />
+          <span className="chip composer-agent-model" data-testid="composer-agent-model-chip">
+            <span data-testid="composer-agent-chip">{agentLabel(task.agent_type)}</span>
+            {task.provider_name && (
+              <span data-testid="composer-provider-chip">· {task.provider_name}</span>
+            )}
+            {task.model && <span data-testid="composer-model-chip">· {task.model}</span>}
+          </span>
+          {/* ticket #27：context 水位环（动作行右置；>80% 警告 + 压缩建议） */}
+          <ContextRing taskId={task.id} />
           {cancellable ? (
             <button
               type="button"
@@ -461,9 +466,9 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
           )}
         </div>
       </div>
-      {err && (
+      {(err ?? notice) && (
         <p className="form-error" role="alert" data-testid="composer-error">
-          {err}
+          {err ?? notice}
         </p>
       )}
     </div>

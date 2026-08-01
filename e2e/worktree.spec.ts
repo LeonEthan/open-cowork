@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * worktree 隔离与回流（ticket #25）端到端：
@@ -47,7 +48,7 @@ async function launchWithScript(dataDir: string, script: unknown[]): Promise<Ele
   });
 }
 
-/** 添加 workspace + 经 UI 建 worktree 任务（勾选隔离） */
+/** 添加 workspace + 经首页 composer 建 worktree 任务并开跑（ticket #36：上下文行 worktree chip 切隔离） */
 async function setupWorktreeTask(
   app: ElectronApplication,
   wsDir: string,
@@ -56,19 +57,8 @@ async function setupWorktreeTask(
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
-  await win.getByTestId('task-agent-select').selectOption('claude-code');
-  // git workspace：worktree 勾选框可用（探测经 IPC，自动等待 enabled）
-  await expect(win.getByTestId('task-worktree-checkbox')).toBeEnabled();
-  await win.getByTestId('task-worktree-checkbox').check();
-  await win.getByTestId('task-create-submit').click();
-  await expect(win.getByTestId('task-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
+  await createTaskViaComposer(win, { prompt, agent: 'claude-code', worktree: true });
   // ticket #35：worktree 任务在侧栏带分支徽标（cowork/<taskId>，#25 数据已具备）
   await expect(
     win.getByTestId('task-item').first().getByTestId('task-branch-badge'),
@@ -107,7 +97,7 @@ test('worktree 任务全流程：隔离运行（原目录零改动）→ 变更 
     expect(wtDir).not.toBeNull();
 
     const win = (await app.windows())[0];
-    await win.getByTestId('send-button').click();
+    // composer 发送即开跑（ticket #36）——fake 在 worktree 内写文件
 
     // fake agent 在 worktree 内写文件：worktree 有、原目录零改动（票面 AC）
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
@@ -158,7 +148,8 @@ test('base 漂移：任务创建后原仓新提交 → 回流阻断并提示 →
   const wsDir = await mkdtemp(join(tmpdir(), 'open-cowork-ws25d-'));
   initGitWorkspace(wsDir);
 
-  // 任务无需真跑 agent——脚本仅打底（不会启动）
+  // 脚本仅打底（expect_stdin 等待首轮输入；ticket #36 起 composer 发送即开跑，
+  // agent 启动即空转退出 → 任务落 failed——本用例不断言任务状态，面板/回流与状态无关）
   const script = [{ action: 'exit', code: 0 }];
   const app = await launchWithScript(dataDir, script);
   try {

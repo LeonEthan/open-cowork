@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * Provider 与凭证（ticket #21）端到端：
@@ -146,30 +147,23 @@ test('② 用该 provider 建任务跑通一轮：env 注入到达 agent 进程�
       const row = await window.openCowork!.providers.addPreset({ presetId: 'deepseek', apiKey: key });
       return row.id;
     }, TEST_KEY);
-    await win.evaluate(async (p) => {
-      await window.openCowork!.workspaces.addByPath(p);
-    }, wsDir);
-    await win.reload();
-    await expect(win.getByTestId('workspace-item')).toHaveCount(1);
+    await addWorkspaceViaBridge(win, wsDir);
 
-    // 新建任务表单：picker 实化——provider 下拉选中 DeepSeek，model 下拉加载其清单
-    await win.getByTestId('new-task-toggle').click();
-    await win.getByTestId('task-prompt-input').fill('ping 一轮对话');
-    await win.getByTestId('task-agent-select').selectOption('claude-code');
-    await win.getByTestId('task-provider-select').selectOption(providerId);
-    await expect(win.getByTestId('task-model-select').locator('option')).toHaveCount(3, {
-      timeout: 10_000,
-    }); // 默认项 + deepseek-chat/reasoner
-    await win.getByTestId('task-model-select').selectOption('deepseek-chat');
-    await win.getByTestId('task-create-submit').click();
-    await expect(win.getByTestId('task-item')).toHaveCount(1);
+    // ticket #36：首页 composer 合并 picker 实化——provider 选中 DeepSeek，model 下拉加载其清单；
+    // 发送 = create+start 一步到位
+    await createTaskViaComposer(win, {
+      prompt: 'ping 一轮对话',
+      agent: 'claude-code',
+      provider: providerId,
+      awaitModelOptions: 3, // 默认项 + deepseek-chat/reasoner
+      model: 'deepseek-chat',
+    });
 
     // 输入区 chip 联动真实值（provider + model）
     await expect(win.getByTestId('composer-provider-chip')).toContainText('DeepSeek');
     await expect(win.getByTestId('composer-model-chip')).toContainText('deepseek-chat');
 
-    // 开跑一轮：fake agent 应答 → 待复查
-    await win.getByTestId('send-button').click();
+    // composer 发送即开跑：fake agent 应答 → 待复查
     await expect(win.getByTestId('msg-assistant').first()).toContainText('pong', {
       timeout: 15_000,
     });

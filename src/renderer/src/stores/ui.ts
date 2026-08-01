@@ -49,6 +49,10 @@ interface UiState {
   utilityPong: boolean;
   /** ticket #35（additive）：侧栏 workspace 分组折叠态记忆（默认展开；true=折叠） */
   sidebarWsCollapsed: Record<string, boolean>;
+  /** ticket #36（additive，瞬态）：侧栏「新建任务」功能行点击计数——首页 composer 据此聚焦输入框 */
+  composerFocusNonce: number;
+  /** ticket #36（additive，瞬态）：create 成功而 start 失败的跨视图提示（任务内 composer ready 态呈现，重试成功即清） */
+  composerNotice: { taskId: string; message: string } | null;
 
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
@@ -61,6 +65,10 @@ interface UiState {
   setUtilityPong: (pong: boolean) => void;
   /** ticket #35（additive）：切换某 workspace 分组的展开/折叠 */
   toggleSidebarWorkspace: (id: string) => void;
+  /** ticket #36（additive）：请求首页 composer 聚焦输入框（配合 setView('document') + 取消任务选中使用） */
+  requestComposerFocus: () => void;
+  /** ticket #36（additive）：写入/清除跨视图 composer 提示（null 清除） */
+  setComposerNotice: (notice: { taskId: string; message: string } | null) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -75,6 +83,8 @@ export const useUiStore = create<UiState>()(
       view: 'document',
       utilityPong: false,
       sidebarWsCollapsed: {},
+      composerFocusNonce: 0,
+      composerNotice: null,
 
       setThemeMode: (themeMode) => set({ themeMode }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -89,6 +99,8 @@ export const useUiStore = create<UiState>()(
         set((s) => ({
           sidebarWsCollapsed: { ...s.sidebarWsCollapsed, [id]: !s.sidebarWsCollapsed[id] },
         })),
+      requestComposerFocus: () => set((s) => ({ composerFocusNonce: s.composerFocusNonce + 1 })),
+      setComposerNotice: (composerNotice) => set({ composerNotice }),
     }),
     {
       name: 'open-cowork:ui',
