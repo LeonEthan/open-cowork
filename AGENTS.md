@@ -15,19 +15,28 @@ open-cowork 是一款**本地桌面 cowork 软件**：以外部 AI agent CLI（C
 
 ## 2. 当前状态（重要）
 
-**项目尚处于规划完成、编码未启动阶段。** `main` 分支上只有文档，没有源代码：
+**MVP 编码已完成，`main` 分支四门全绿**（vitest 单测/contract、tsc、build、Playwright e2e）。仓库现状：
 
 ```
-├── README.md            # 项目简介与文档索引
-├── AGENTS.md            # 本文件
-└── docs/
-    ├── PRD.md           # 产品规格书（定位、范围、MVP 功能、数据模型）
-    ├── ARCHITECTURE.md  # 架构决策集（进程架构、agent 接入、存储、回滚）
-    └── DESIGN.md        # 设计宪法（一切 UI 实现的最高准则）
+├── package.json             # npm scripts 五件套：dev / build / test / typecheck / test:e2e
+├── electron.vite.config.ts  # electron-vite 工程化（main / preload / renderer 三目标；main 含 index+agent 双入口）
+├── playwright.config.ts     # e2e（@playwright/test 的 _electron 驱动真实应用）
+├── src/
+│   ├── main/                # main 进程：窗口/SQLite/git/worktree/审批/用量/pty 等服务（services/ 自动注册）
+│   ├── agent/               # utility process（agent 适配层宿主）：driver 注册表 + JSONL 旁路 + 审批中继
+│   ├── preload/             # contextBridge 最小桥 + agent-port MessageChannel 转发
+│   ├── renderer/            # React 19 + Zustand 纯 UI（扩展注册表：侧栏/检查栏/设置页三面）
+│   └── shared/              # 三进程共享：IPC API 类型、路径解析、协议常量
+├── tests/                   # vitest（Node 环境）：main/agent 侧纯逻辑单测
+│   ├── contract/            # 测试接缝：五家 driver 共享 contract 套件（suite.ts 表驱动）
+│   └── fake-agent/          # fake agent harness：JSONL 脚本驱动五种 wire 格式（claude/codex/opencode/pi/acp）
+├── e2e/                     # Playwright e2e spec（黄金路径/审批流/终端/worktree/用量/provider 等）
+├── docs/                    # PRD / ARCHITECTURE / DESIGN（事实之源）
+└── .github/workflows/e2e.yml  # CI：macos-14 跑 npm ci → build → e2e 黄金路径
 ```
 
-- **没有** `package.json`、`pyproject.toml`、`Cargo.toml` 等任何构建配置；**没有**测试框架；**没有** CI/CD 配置。
-- 三份文档是事实之源（source of truth）。任何实现工作开始前，先读对应章节。
+- 三条测试接缝：vitest 单测（`npm run test`）· driver contract（tests/contract，fake-agent 脚本化 wire）· e2e（`npm run test:e2e`，真实 Electron）。
+- 三份文档仍是事实之源（source of truth）。任何实现工作开始前，先读对应章节。
 
 ## 3. 权威文档（读代码之前先读这些）
 
@@ -37,9 +46,9 @@ open-cowork 是一款**本地桌面 cowork 软件**：以外部 AI agent CLI（C
 | `docs/ARCHITECTURE.md` | Electron 三进程架构（§1）、agent 接入方式（§2）、provider 配置机制（§3）、存储方案（§5）、**关键工程红线（§10）** | 做任何架构/技术决策前 |
 | `docs/DESIGN.md` | 设计宪法：布局、色彩 token 白名单、字体排版、组件规则、动效上限、禁区（§7） | 写任何 UI 代码前，条款可引用（如「违反 §3.2」） |
 
-## 4. 规划的技术栈与目录结构（尚未落地）
+## 4. 技术栈与目录结构（已按此落地）
 
-以下来自 `docs/ARCHITECTURE.md`，实现时按此执行：
+以下与 `docs/ARCHITECTURE.md` 一致，`main` 分支已实现：
 
 - **平台**：Electron 桌面应用，macOS 优先（Windows/Linux 不阻塞但不为其妥协设计）。
 - **技术栈**：React 19 + Vite + Zustand + react-markdown + Shiki；终端用 node-pty + xterm.js。
@@ -67,7 +76,7 @@ open-cowork 是一款**本地桌面 cowork 软件**：以外部 AI agent CLI（C
 ## 7. 仓库与分支
 
 - 远程：GitHub `LeonEthan/open-cowork`。
-- `main`：当前仅文档。
+- `main`：MVP 实现主线（docs + src + tests + e2e，四门全绿）。
 - 原型分支（各含一个自包含 HTML 单文件原型，无构建步骤，直接用浏览器打开）：
   - `prototype/typora-ui` → `prototype/typora-ui.html`（界面设计稿，票 #9）
   - `prototype/approval-flow` → `prototype/approval-flow.html`（审批流交互，票 #8）
@@ -76,7 +85,13 @@ open-cowork 是一款**本地桌面 cowork 软件**：以外部 AI agent CLI（C
 
 ## 8. 构建、测试与部署
 
-**目前均不存在。** 无构建命令、无测试、无 lint 配置、无 CI。首批代码落地时应按 `docs/ARCHITECTURE.md` §1 引入 electron-vite 工程化，并同步更新本文件。
+- **开发**：`npm run dev`（electron-vite dev，热更新）。
+- **构建**：`npm run build`（electron-vite → `out/`：main / preload / renderer 三目标；main 含 index + agent 双入口）。
+- **单测/contract**：`npm run test`（vitest，Node 环境；含 tests/contract 五家 driver 共享套件，fake-agent 脚本化 wire）。
+- **类型检查**：`npm run typecheck`（tsc --noEmit）。
+- **e2e**：`npm run test:e2e`（pretest:e2e 自动先 build；Playwright `_electron` 驱动真实应用，无需下载浏览器）。
+- **CI**：`.github/workflows/e2e.yml`（macos-14：`npm ci` → build → e2e；postinstall 处理原生模块双 ABI——Node 副本供 vitest、Electron 重编译供运行时，别名见 vitest.config.ts）。
+- **原生模块**：better-sqlite3 / node-pty 为原生依赖；ABI 漂移时跑 `npm run rebuild:native`。
 
 部署/分发属延期项（PRD §9）：技术选型已定（electron-builder + electron-updater + GitHub Releases），发布渠道与签名策略待定。
 

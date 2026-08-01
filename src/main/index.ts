@@ -82,7 +82,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false,
+      // sandbox 恢复默认开启（audit phase-g）：preload 仅用 contextBridge/ipcRenderer
+      // 与 process polyfill 属性，满足沙箱要求；renderer 进程不应整体放弃 Chromium 沙箱。
     },
   });
   mainWindow.once('ready-to-show', () => mainWindow?.show());

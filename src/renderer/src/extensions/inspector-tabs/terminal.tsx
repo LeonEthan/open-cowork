@@ -192,7 +192,7 @@ function TerminalTab(): React.JSX.Element {
 const def: InspectorTabDef = {
   id: 'terminal',
   title: '终端',
-  order: 30, // §1 顺序：变更(20，#24) / 终端(30)
+  order: 30, // §1 顺序：变更(20，#24) / 终端(30)；文件复查并入变更 tab（DESIGN.md §1 合并决议）
   component: TerminalTab,
 };
 
