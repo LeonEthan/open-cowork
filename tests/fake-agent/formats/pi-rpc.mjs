@@ -128,9 +128,11 @@ export default function createPiRpcEmitter(io) {
 
   return {
     start(ctx) {
-      // 真实 pi：启动静默（首条输出是命令响应）——这里只写启动回显旁路
+      // 真实 pi：启动静默（首条输出是命令响应）——这里只写启动回显旁路。
+      // #26 集成：--version 探测调用不是一次「运行」（真实 CLI 打印版本即退出，
+      // 无启动行为），跳过回显——否则探测噪声会挤进 e2e 的旗标断言日志。
       const logFile = process.env.FAKE_AGENT_STARTUP_LOG;
-      if (logFile) {
+      if (logFile && !ctx.args.includes('--version')) {
         try {
           appendFileSync(
             logFile,
