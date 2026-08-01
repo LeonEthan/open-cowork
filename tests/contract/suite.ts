@@ -420,12 +420,15 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
     });
 
     it('审批回执形状：allow_once 不带 updatedPermissions；allow_always + suggestions 原样回写', async () => {
+      // destination='session'：session 目的地是各家都放行的最小公分母——
+      // claude 对非 session 目的地有过滤白名单（audit phase-g，不碰全局红线），
+      // 非 session 目的地的丢弃行为见 claude.contract.test.ts 专备用例。
       const SUGGESTIONS = [
         {
           type: 'addRules',
           rules: [{ toolName: 'Bash', ruleContent: 'npm *' }],
           behavior: 'allow',
-          destination: 'projectSettings',
+          destination: 'session',
         },
       ];
       // allow_once：回执允许但不回写任何权限

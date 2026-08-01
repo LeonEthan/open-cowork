@@ -269,6 +269,24 @@ function normalizeMessage(msg: SDKMessage, state: DriverState, emit: (e: AgentEv
 
 const DEFAULT_PERMISSION_TIMEOUT_MS = 120_000;
 
+/**
+ * permission suggestions 的 destination 白名单（audit phase-g）：仅放行 'session'。
+ * 其余目的地（userSettings/projectSettings/localSettings/cliArg）会让 CLI 把放行
+ * 规则写入用户全局 ~/.claude/settings.json 等持久配置——违反「不碰全局」红线
+ * （ARCHITECTURE §10），一律丢弃并记 warn。应用侧规则记忆由 alwaysAllowRules
+ * 承担，不依赖 agent 侧持久化。
+ */
+function filterSessionPermissionUpdates(suggestions: unknown[]): unknown[] {
+  return suggestions.filter((s) => {
+    const dest = (s as { destination?: unknown } | null)?.destination;
+    if (dest === 'session') return true;
+    console.warn(
+      `[claude-driver] 丢弃非 session 目的地的 permission suggestion (destination=${String(dest)})`,
+    );
+    return false;
+  });
+}
+
 class ClaudeDriverSession implements DriverSession {
   readonly done: Promise<{ reason: SessionEndReason; error?: string }>;
   private readonly inbox = createUserMessageInbox();
@@ -329,13 +347,16 @@ class ClaudeDriverSession implements DriverSession {
       // 决议回执进事件流（全 driver 约定：driver 发，宿主不代发）
       emit({ type: 'permission_response', requestId: request.id, decision });
       if (decision.behavior === 'allow') {
+        // 「总是允许」回写 agent 侧规则（ARCHITECTURE §6）——destination 白名单
+        // 仅 session；其余目的地丢弃（不碰全局红线，见 filterSessionPermissionUpdates）
+        const sessionUpdates =
+          decision.always && Array.isArray(opts.suggestions)
+            ? filterSessionPermissionUpdates(opts.suggestions)
+            : [];
         return {
           behavior: 'allow' as const,
           updatedInput: input,
-          // 「总是允许」回写 agent 侧规则（ARCHITECTURE §6；suggestions 原样透传）
-          ...(decision.always && Array.isArray(opts.suggestions)
-            ? { updatedPermissions: opts.suggestions as never }
-            : {}),
+          ...(sessionUpdates.length > 0 ? { updatedPermissions: sessionUpdates as never } : {}),
         };
       }
       return { behavior: 'deny' as const, message: decision.message ?? '已拒绝' };
