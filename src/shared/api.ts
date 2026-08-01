@@ -39,6 +39,13 @@ export interface OpenCoworkApi {
   onPtyExit: (key: string, cb: (exitCode: number) => void) => () => void;
   // ── ticket #28 end ────────────────────────────────────────────────────
 
+  // ── ticket #38：pty 会话活性（检查栏「终端活跃」数据源，DESIGN.md §1.2） ──
+  /** 存活会话 key 快照（renderer 启动/重载时播种 liveTerminals） */
+  ptyList: () => Promise<string[]>;
+  /** 会话活性广播（创建/退出/dispose，{key, alive}）；返回取消订阅函数 */
+  onPtySession: (cb: (evt: { key: string; alive: boolean }) => void) => () => void;
+  // ── ticket #38 end ────────────────────────────────────────────────────
+
   // ── ticket #22：agent 探测（picker 数据源；#26 完整卡片） ─────────────
   agents: AgentDetectApi;
   // ── ticket #22 end ────────────────────────────────────────────────────

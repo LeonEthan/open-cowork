@@ -118,6 +118,17 @@ describe('PtySessionManager（ticket #28：node-pty 会话）', () => {
     for (const m of managers.splice(0)) m.disposeAll();
   });
 
+  it('keys() 快照（ticket #38：pty:list 数据源）：创建登记、dispose 移除', () => {
+    const m = new PtySessionManager();
+    managers.push(m);
+    expect(m.keys()).toEqual([]);
+    m.getOrCreate('task-a', { cols: 80, rows: 24, shell: '/bin/cat', shellArgs: [] });
+    m.getOrCreate('global', { cols: 80, rows: 24, shell: '/bin/cat', shellArgs: [] });
+    expect(m.keys().sort()).toEqual(['global', 'task-a']);
+    m.dispose('task-a');
+    expect(m.keys()).toEqual(['global']);
+  });
+
   it('echo 往返：写入的数据经 pty 回到 onData；per key 复用', async () => {
     const m = new PtySessionManager();
     managers.push(m);

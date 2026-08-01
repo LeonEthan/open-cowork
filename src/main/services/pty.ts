@@ -7,8 +7,11 @@ import type { ServiceContext } from './index';
  * pty 服务（ticket #28 内置终端 tab）：
  * - node-pty 起登录 shell（macOS 默认 /bin/zsh -l，读 SHELL 兜底，见 pty/shell.ts）；
  * - per taskId 各一独立会话（key=taskId；无任务选中时 key='global'）；
- * - IPC：pty:create（invoke，懒启动/复用）· pty:write · pty:resize · pty:dispose；
+ * - IPC：pty:create（invoke，懒启动/复用）· pty:write · pty:resize · pty:dispose ·
+ *   pty:list（invoke，ticket #38：存活 key 快照）；
  *   输出经 pty:data / pty:exit 推回渲染端（仅创建会话的那个 webContents）；
+ *   ticket #38：会话活性经 pty:session {key, alive} 广播（创建/退出/dispose），
+ *   renderer 据此派生检查栏「终端活跃」（DESIGN.md §1.2）。
  * - cwd 由 main 侧按当前任务解析（worktree_path → workspace.path → home，见 pty/cwd.ts）；
  * - 窗口关闭 / 应用退出前全部 pty 清理。
  *
@@ -65,11 +68,25 @@ export default function register(ctx: ServiceContext): void {
           if (!wc.isDestroyed()) wc.send('pty:data', { key, data });
         },
         onExit: (exitCode) => {
-          if (!wc.isDestroyed()) wc.send('pty:exit', { key, exitCode });
+          if (!wc.isDestroyed()) {
+            wc.send('pty:exit', { key, exitCode });
+            // ticket #38：shell 退出 = 会话消亡（sessions.ts 同步从 map 删除），广播活性
+            wc.send('pty:session', { key, alive: false });
+          }
         },
       },
     );
+    // ticket #38：新会话诞生广播（复用已有会话 created=false 不广播——活性本就为 true）
+    if (result.created && !wc.isDestroyed()) wc.send('pty:session', { key, alive: true });
     return { ok: true as const, cwd: result.cwd, created: result.created };
+  });
+
+  // ticket #38：存活会话 key 快照（renderer 启动/重载时播种 liveTerminals）
+  ctx.ipcMain.handle('pty:list', (event) => {
+    if (!senderAllowed(event)) {
+      throw new Error('[pty] 来源非法');
+    }
+    return manager.keys();
   });
 
   ctx.ipcMain.on('pty:write', (event, key: unknown, data: unknown) => {
@@ -89,5 +106,7 @@ export default function register(ctx: ServiceContext): void {
     if (!senderAllowed(event)) return;
     if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
     manager.dispose(key);
+    // ticket #38：dispose 即消亡（无论此前是否存活，幂等广播活性 false）
+    if (!event.sender.isDestroyed()) event.sender.send('pty:session', { key, alive: false });
   });
 }

@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { useAgentPort } from './hooks/useAgentPort';
 import { useTheme } from './hooks/useTheme';
 import { useDataStore } from './stores/data';
+import { useUiStore } from './stores/ui';
 
 export function App(): React.JSX.Element {
   useTheme();
@@ -15,6 +16,16 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  // ticket #38：pty 会话活性播种 + 订阅（检查栏「终端活跃」数据源，§1.2）
+  const setLiveTerminals = useUiStore((s) => s.setLiveTerminals);
+  const setTerminalAlive = useUiStore((s) => s.setTerminalAlive);
+  useEffect(() => {
+    const api = window.openCowork;
+    if (!api) return;
+    void api.ptyList().then((keys) => setLiveTerminals(keys));
+    return api.onPtySession(({ key, alive }) => setTerminalAlive(key, alive));
+  }, [setLiveTerminals, setTerminalAlive]);
 
   // ticket #19：main 侧任务行变更（状态机迁移/session_id/fail_reason）广播 → 重拉快照
   useEffect(() => {

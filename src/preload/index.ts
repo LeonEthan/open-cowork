@@ -175,6 +175,24 @@ const api: OpenCoworkApi = {
     context: (taskId: string) => ipcRenderer.invoke('usage:context', taskId),
   },
   // ── ticket #27 end ────────────────────────────────────────────────────
+
+  // ── ticket #38：pty 会话活性 ─────────────────────────────────────────
+  ptyList: () => ipcRenderer.invoke('pty:list') as Promise<string[]>,
+  onPtySession: (cb) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { key: string; alive: boolean },
+    ) => {
+      if (payload && typeof payload.key === 'string') {
+        cb({ key: payload.key, alive: payload.alive === true });
+      }
+    };
+    ipcRenderer.on('pty:session', listener);
+    return () => {
+      ipcRenderer.removeListener('pty:session', listener);
+    };
+  },
+  // ── ticket #38 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);

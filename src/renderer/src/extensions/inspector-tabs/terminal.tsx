@@ -3,7 +3,7 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { useUiStore } from '../../stores/ui';
+import { TERMINAL_GLOBAL_KEY } from '../../../../shared/terminal';
 import type { InspectorTabDef } from '../registry';
 
 /**
@@ -16,9 +16,6 @@ import type { InspectorTabDef } from '../registry';
  * - 配色禁止硬编码（DESIGN.md §6）：从 CSS 变量实时解析喂给 xterm theme，
  *   <html data-theme> 切换时重读。
  */
-
-/** 与 main 侧约定的「无任务选中」会话 key（pty/sessions.ts GLOBAL_TERMINAL_KEY） */
-const GLOBAL_KEY = 'global';
 
 /** xterm 会话（活在 React 组件之外：tab 卸载只是 detach，缓冲不丢） */
 interface TermSession {
@@ -126,13 +123,8 @@ function getOrCreateSession(key: string): TermSession {
 
 function TerminalTab(): React.JSX.Element {
   const currentTaskId = useAppStore((s) => s.currentTaskId);
-  const key = currentTaskId ?? GLOBAL_KEY;
+  const key = currentTaskId ?? TERMINAL_GLOBAL_KEY;
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  // ticket #34：用户点开过终端 tab 即视为「终端活跃」（检查栏自动规则因子，ui store 瞬态）
-  useEffect(() => {
-    useUiStore.getState().markTerminalActivated();
-  }, []);
 
   useEffect(() => {
     const container = containerRef.current;

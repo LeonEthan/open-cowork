@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { spawn, type IPty } from 'node-pty';
+import { TERMINAL_GLOBAL_KEY } from '../../shared/terminal';
 import { resolveLoginShell } from './shell';
 
 /**
@@ -7,8 +8,8 @@ import { resolveLoginShell } from './shell';
  * 纯 Node 实现、不依赖 Electron——services/pty.ts 只负责 IPC 接线，vitest 可直接测本模块。
  */
 
-/** 无任务选中时的会话 key（与渲染端约定一致） */
-export const GLOBAL_TERMINAL_KEY = 'global';
+/** 无任务选中时的会话 key（wire 契约单一来源在 shared/terminal.ts，此处沿用旧名 re-export） */
+export const GLOBAL_TERMINAL_KEY = TERMINAL_GLOBAL_KEY;
 
 export interface PtySessionSpec {
   cols: number;
@@ -35,6 +36,11 @@ export class PtySessionManager {
 
   has(key: string): boolean {
     return this.sessions.has(key);
+  }
+
+  /** ticket #38：存活会话 key 快照（pty:list 用；renderer 据此派生「终端活跃」） */
+  keys(): string[] {
+    return [...this.sessions.keys()];
   }
 
   size(): number {
