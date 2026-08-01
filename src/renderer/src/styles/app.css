@@ -124,7 +124,7 @@
   font-size: 14px;
 }
 
-/* 检查栏（320px，可折叠） */
+/* 检查栏（320px；上下文化出现——无可展示内容时整体不渲染，见末尾 ticket #34 分组，§1.2） */
 .inspector {
   width: var(--inspector-w);
   flex: none;
@@ -132,10 +132,6 @@
   flex-direction: column;
   background: var(--bg-soft);
   border-left: 1px solid var(--border);
-  transition: margin-right 200ms ease;
-}
-.inspector.collapsed {
-  margin-right: calc(-1 * var(--inspector-w));
 }
 .inspector-tabs {
   flex: none;
@@ -675,3 +671,39 @@ button:disabled {
 }
 /* ── ticket #19 end ────────────────────────────────────── */
 
+
+/* ── ticket #34：检查栏上下文化（§1.2）────────────────── */
+/* 内容区承载右上角检查栏开关（不占文档流槽位） */
+.content {
+  position: relative;
+}
+/* 检查栏出现走抽屉 slide（§5 白名单：≤220ms ease） */
+.inspector {
+  animation: inspector-slide-in 200ms ease;
+}
+@keyframes inspector-slide-in {
+  from {
+    transform: translateX(var(--inspector-w));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+/* 内容区右上角检查栏开关（小图标；快捷键 ⌘J，见 title 提示） */
+.inspector-toggle {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 2;
+}
+/* 变更 tab 新内容轻提示：状态点级别（accent，不抢夺展开，§5 克制） */
+.inspector-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+/* ── ticket #34 end ────────────────────────────────────── */

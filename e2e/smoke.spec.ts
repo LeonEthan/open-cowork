@@ -22,10 +22,10 @@ test('smoke: 三栏骨架 + 主题 + utility 直连 + DB 初始化', async () =>
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // 三栏骨架（§1）
+    // 三栏骨架（§1）；检查栏上下文化（§1.2/ticket #34）：空态无内容时不占位
     await expect(win.getByTestId('task-sidebar')).toBeVisible();
     await expect(win.getByTestId('document-flow')).toBeVisible();
-    await expect(win.getByTestId('inspector')).toBeVisible();
+    await expect(win.getByTestId('inspector')).toHaveCount(0);
 
     // 主题属性合法（跟随系统解析为 light 或 dark，§6）
     const theme = await win.evaluate(() => document.documentElement.dataset.theme);
@@ -46,11 +46,13 @@ test('smoke: 三栏骨架 + 主题 + utility 直连 + DB 初始化', async () =>
     const stored = await win.evaluate(() => window.localStorage.getItem('open-cowork:ui'));
     expect(stored).toContain('"themeMode"');
 
-    // 左右栏可折叠（§1）
+    // 左右栏开关（§1）；检查栏为上下文化手动唤起/隐藏（§1.2/ticket #34，偏好记忆）
     await win.getByTestId('toggle-sidebar').click();
     await expect(win.getByTestId('task-sidebar')).toHaveClass(/collapsed/);
     await win.getByTestId('toggle-inspector').click();
-    await expect(win.getByTestId('inspector')).toHaveClass(/collapsed/);
+    await expect(win.getByTestId('inspector')).toBeVisible();
+    await win.getByTestId('toggle-inspector').click();
+    await expect(win.getByTestId('inspector')).toHaveCount(0);
   } finally {
     await app.close();
   }
