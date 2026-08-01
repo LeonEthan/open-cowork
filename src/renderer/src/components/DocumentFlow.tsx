@@ -6,8 +6,11 @@ import { useConversationStore } from '../stores/conversation';
 import type { ConversationItem } from '../stores/conversation';
 import { useDataStore } from '../stores/data';
 import { useUiStore } from '../stores/ui';
+import { useUsageStore } from '../stores/usage';
+import { describeTurnUsage, describeTurnUsageTitle } from '../../../shared/usageFormat';
 import type { PermissionMode, TaskListItem } from '../../../shared/api';
 import { ApprovalTray } from './ApprovalTray';
+import { ContextRing } from './ContextRing';
 import { Markdown } from './Markdown';
 
 /**
@@ -16,6 +19,8 @@ import { Markdown } from './Markdown';
  * - 选中任务（ticket #19）：文档式会话流——用户消息、agent markdown 流式回复、
  *   工具调用极简行（icon + 名称 + 目标 + 状态，§4）、思考过程左边线折叠（§4）、
  *   failed 态原因 + 重试；底部输入区：单圆角框 + agent/model chip + 发送/取消键；
+ * - ticket #27：每轮末尾用量灰字（token + 折算金额，口径在 tooltip）；
+ *   输入区 chips 行末尾 context 水位环（>80% 警告 + 压缩建议）；
  * - 未选中任务：保持空态（文案克制，§7）。
  */
 
@@ -55,9 +60,11 @@ export function DocumentFlow(): React.JSX.Element {
 function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Element {
   const conversation = useConversationStore((s) => s.byTask[task.id]);
   const applyHistory = useConversationStore((s) => s.applyHistory);
+  const loadUsageContext = useUsageStore((s) => s.loadContext);
   const themeMode = useUiStore((s) => s.themeMode);
 
-  // 选中任务：从 main 重拉历史基线（实时端口负责增量；key=task.id 切换时重挂本组件）
+  // 选中任务：从 main 重拉历史基线（实时端口负责增量；key=task.id 切换时重挂本组件）；
+  // ticket #27：同机拉水位环分母与基线已占（usage:context）
   useEffect(() => {
     const api = window.openCowork;
     if (!api) return;
@@ -65,10 +72,11 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
     void api.agent.history(task.id).then((h) => {
       if (alive) applyHistory(task.id, h);
     });
+    void loadUsageContext(task.id);
     return () => {
       alive = false;
     };
-  }, [task.id, applyHistory]);
+  }, [task.id, applyHistory, loadUsageContext]);
 
   const items = conversation?.items ?? [];
   // ready 态预览：首轮未跑前把创建时的需求描述呈现为首条用户消息（开跑后由落库消息接管）
@@ -149,6 +157,8 @@ function ConversationItemView(props: { item: ConversationItem; themeKey: string 
       return <ToolRow item={item} />;
     case 'permission':
       return <PermissionRow item={item} />;
+    case 'usage':
+      return <UsageRow item={item} />;
     case 'error':
       return (
         <p className="msg-error" data-testid="msg-error" role="alert">
@@ -202,6 +212,20 @@ function PermissionRow({
         {decided ? (allowed ? '已允许' : '已拒绝') : '待审批'}
       </span>
     </div>
+  );
+}
+
+/** ticket #27：每轮末尾的用量灰字（本轮 in/out token + 折算金额；口径全在 tooltip） */
+function UsageRow({ item }: { item: Extract<ConversationItem, { kind: 'usage' }> }): React.JSX.Element {
+  return (
+    <p
+      className="turn-usage"
+      data-testid="turn-usage"
+      data-pending={item.usage.pending ? 'true' : 'false'}
+      title={describeTurnUsageTitle(item.usage)}
+    >
+      {describeTurnUsage(item.usage)}
+    </p>
   );
 }
 
@@ -366,6 +390,8 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
           >
             ⚙ {MODE_LABELS[mode]}
           </button>
+          {/* ticket #27：context 水位环（chips 行末尾右置；>80% 警告 + 压缩建议） */}
+          <ContextRing taskId={task.id} />
         </div>
         <textarea
           className="composer-input"

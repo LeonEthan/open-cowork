@@ -4,6 +4,7 @@ import * as taskRepo from './db/taskRepo';
 import type { Database } from './db/database';
 import type { TaskStatus } from './db/entities';
 import { canTransition } from './db/taskStateMachine';
+import { priceTaskUsage } from './usage/pricing';
 import type { AgentEvent } from '../agent/events';
 
 /**
@@ -212,14 +213,19 @@ export function createAgentEventDispatcher(ctx: AgentEventDispatchContext) {
 
       case 'usage': {
         const turn = conversationRepo.getRunningTurn(ctx.db, taskId);
+        // ticket #27：落库时一次折算（models.dev 价 / 订阅制标注），口径锁定在记录里
+        const pricing = priceTaskUsage(ctx.db, task, event.usage);
         conversationRepo.insertUsageRecord(ctx.db, {
           taskId,
           turnId: turn?.id ?? null,
-          model: event.usage.model ?? null,
+          model: pricing.model,
           inputTokens: event.usage.inputTokens,
           outputTokens: event.usage.outputTokens,
           cacheReadTokens: event.usage.cacheReadTokens ?? 0,
           cacheWriteTokens: event.usage.cacheWriteTokens ?? 0,
+          providerId: pricing.providerId,
+          costUsd: pricing.costUsd,
+          pricingSource: pricing.pricingSource,
         });
         break;
       }

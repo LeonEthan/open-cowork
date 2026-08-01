@@ -181,7 +181,7 @@ export function decideApproval(
   );
 }
 
-// ── UsageRecord（#27 用量消费点；本票接通落库） ───────────────────────────
+// ── UsageRecord（#27 接通折算：cost_usd / pricing_source 落库时一次锁定） ──
 
 export function insertUsageRecord(
   db: Database,
@@ -193,6 +193,11 @@ export function insertUsageRecord(
     outputTokens: number;
     cacheReadTokens: number;
     cacheWriteTokens: number;
+    /** ticket #27：provider 快照（订阅途径 = null） */
+    providerId?: string | null;
+    /** ticket #27：models.dev 折算结果（订阅制/无价目 = null，口径见 usage/pricing.ts） */
+    costUsd?: number | null;
+    pricingSource?: 'models.dev' | 'subscription' | null;
   },
   now: number = Date.now(),
 ): UsageRecord {
@@ -200,33 +205,73 @@ export function insertUsageRecord(
     id: randomUUID(),
     task_id: input.taskId,
     turn_id: input.turnId,
-    provider_id: null,
+    provider_id: input.providerId ?? null,
     model: input.model,
     input_tokens: input.inputTokens,
     output_tokens: input.outputTokens,
     cache_read_tokens: input.cacheReadTokens,
     cache_write_tokens: input.cacheWriteTokens,
-    cost_usd: null, // 成本折算属 #27（models.dev 价），本票只记 token
-    pricing_source: null,
+    cost_usd: input.costUsd ?? null,
+    pricing_source: input.pricingSource ?? null,
     recorded_at: now,
   };
   db.prepare(
     `INSERT INTO usage_records (id, task_id, turn_id, provider_id, model, input_tokens,
                                 output_tokens, cache_read_tokens, cache_write_tokens,
                                 cost_usd, pricing_source, recorded_at)
-     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     rec.id,
     rec.task_id,
     rec.turn_id,
+    rec.provider_id,
     rec.model,
     rec.input_tokens,
     rec.output_tokens,
     rec.cache_read_tokens,
     rec.cache_write_tokens,
+    rec.cost_usd,
+    rec.pricing_source,
     rec.recorded_at,
   );
   return rec;
+}
+
+/** 任务的用量记录（recorded_at 升序；轮次小字 reconcile 与历史重拉用） */
+export function listUsageByTask(db: Database, taskId: string): UsageRecord[] {
+  return db
+    .prepare('SELECT * FROM usage_records WHERE task_id = ? ORDER BY recorded_at ASC, id ASC')
+    .all(taskId) as UsageRecord[];
+}
+
+/** 全任务用量聚合（侧栏 chip；cost 只加总非 NULL 行，缓存单列，口径见 shared/usageFormat.ts） */
+export interface UsageTotalsRow {
+  task_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number | null;
+  priced_records: number;
+  subscription_records: number;
+  records: number;
+}
+
+export function usageTotalsByTask(db: Database): UsageTotalsRow[] {
+  return db
+    .prepare(
+      `SELECT task_id,
+              SUM(input_tokens) AS input_tokens,
+              SUM(output_tokens) AS output_tokens,
+              SUM(cache_read_tokens) AS cache_read_tokens,
+              SUM(cache_write_tokens) AS cache_write_tokens,
+              SUM(cost_usd) AS cost_usd,
+              SUM(CASE WHEN cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_records,
+              SUM(CASE WHEN pricing_source = 'subscription' THEN 1 ELSE 0 END) AS subscription_records,
+              COUNT(*) AS records
+       FROM usage_records GROUP BY task_id`,
+    )
+    .all() as UsageTotalsRow[];
 }
 
 // ── 历史重拉（renderer 选中任务时渲染用） ─────────────────────────────────
@@ -237,6 +282,8 @@ export interface TaskHistory {
   toolCalls: ToolCall[];
   /** ticket #20（additive）：仍 pending 的审批行——重启/重连后恢复审批托盘的渲染基线 */
   approvals: Approval[];
+  /** ticket #27（additive）：用量记录——文档流每轮末尾灰字的渲染基线（含折算口径） */
+  usageRecords: UsageRecord[];
 }
 
 export function listHistory(db: Database, taskId: string): TaskHistory {
@@ -252,5 +299,6 @@ export function listHistory(db: Database, taskId: string): TaskHistory {
   const approvals = db
     .prepare("SELECT * FROM approvals WHERE task_id = ? AND decision = 'pending' ORDER BY created_at ASC")
     .all(taskId) as Approval[];
-  return { turns, messages, toolCalls, approvals };
+  const usageRecords = listUsageByTask(db, taskId);
+  return { turns, messages, toolCalls, approvals, usageRecords };
 }

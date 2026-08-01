@@ -291,6 +291,20 @@ export default function createClaudeStreamJsonEmitter(io) {
         case 'turn_end': {
           const status = event.status ?? 'completed';
           const isError = status !== 'completed' || Boolean(event.isError);
+          // ticket #27（additive）：脚本 usage.model 时带上 modelUsage——
+          // driver 归一 usage.model 的来源（Object.keys(modelUsage)[0]）
+          const modelUsage = event.usage?.model
+            ? {
+                [event.usage.model]: {
+                  inputTokens: event.usage?.inputTokens ?? 3,
+                  outputTokens: event.usage?.outputTokens ?? 5,
+                  cacheReadInputTokens: event.usage?.cacheReadTokens ?? 0,
+                  cacheCreationInputTokens: event.usage?.cacheWriteTokens ?? 0,
+                  costUSD: 0,
+                  contextWindow: 200000,
+                },
+              }
+            : {};
           send({
             type: 'result',
             subtype: isError ? 'error_during_execution' : 'success',
@@ -310,7 +324,7 @@ export default function createClaudeStreamJsonEmitter(io) {
               server_tool_use: { web_search_requests: 0 },
               service_tier: 'standard',
             },
-            modelUsage: {},
+            modelUsage,
             permission_denials: [],
             errors: isError ? [event.result ?? 'turn failed'] : [],
             uuid: randomUUID(),

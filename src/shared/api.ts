@@ -67,6 +67,11 @@ export interface OpenCoworkApi {
   /** 自定义 ACP agent 注册表（表单录入命令与参数，PRD §4.5） */
   customAgents: CustomAgentsApi;
   // ── ticket #26 end ────────────────────────────────────────────────────
+
+  // ── ticket #27：用量与 context 水位 ──────────────────────────────────
+  /** 任务用量 chip 聚合 / 轮次小字 reconcile / 水位环分母（折算在落库时完成，只读） */
+  usage: UsageApi;
+  // ── ticket #27 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -115,6 +120,8 @@ export interface TaskHistory {
   toolCalls: ToolCall[];
   /** ticket #20（additive）：仍 pending 的审批行——重连/重启后恢复审批托盘的渲染基线 */
   approvals: Approval[];
+  /** ticket #27（additive）：用量记录——每轮末尾灰字（含 cost_usd / pricing_source 口径） */
+  usageRecords: UsageRecord[];
 }
 
 export interface AgentApi {
@@ -396,3 +403,46 @@ export interface CustomAgentsApi {
   reprobe: (id: string) => Promise<CustomAgentInfo[]>;
 }
 // ── ticket #26 end ──────────────────────────────────────────────────────
+
+// ── ticket #27：用量与 context 水位 ─────────────────────────────────────
+// 独立 import 行（additive，不改文件顶部既有 import——并行票据零冲突合并约定）
+import type { UsageRecord } from '../main/db/entities';
+export type { UsageRecord };
+
+/** 任务级聚合（侧栏 chip；与 shared/usageFormat.ts UsageTotals 同形 + taskId） */
+export interface UsageTaskTotals {
+  taskId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** 已折算记录的 cost_usd 之和；无折算记录为 null */
+  costUsd: number | null;
+  /** 存在 models.dev 折算记录 */
+  hasPriced: boolean;
+  /** 存在订阅制记录（金额「仅供参考」标注） */
+  hasSubscription: boolean;
+  /** 记录条数（0 = 无用量，chip 不显示） */
+  records: number;
+}
+
+/** 水位环信息（usage:context；分母来源标注 + 最新一轮已占 token） */
+export interface UsageContextInfo {
+  contextWindow: number;
+  /** models.dev 元数据 / per-agent 保守默认（main usage/pricing.ts） */
+  source: 'models.dev' | 'default';
+  /** 采用的模型 id（usage 实报 → task 快照） */
+  model: string | null;
+  /** 最新一轮 input + cacheRead（无记录为 0） */
+  usedTokens: number;
+}
+
+export interface UsageApi {
+  /** 任务用量记录（recorded_at 升序；轮次小字 reconcile 用） */
+  list: (taskId: string) => Promise<UsageRecord[]>;
+  /** 全任务聚合（侧栏 chip 数据源） */
+  totals: () => Promise<UsageTaskTotals[]>;
+  /** 水位环分母与已占（选中任务时拉取；实时增量由 usage 事件驱动） */
+  context: (taskId: string) => Promise<UsageContextInfo>;
+}
+// ── ticket #27 end ──────────────────────────────────────────────────────

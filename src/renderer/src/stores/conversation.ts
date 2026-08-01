@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { AgentEvent, NormalizedToolCall, PermissionDecision, PermissionRequestPayload } from '../../../agent/events';
-import type { TaskHistory } from '../../../shared/api';
+import type { TaskHistory, UsageRecord } from '../../../shared/api';
 
 /**
  * 会话文档流的渲染态 store（ticket #19）。
@@ -43,13 +43,32 @@ export interface ErrorItem {
   kind: 'error';
   message: string;
 }
+/**
+ * ticket #27：每轮末尾的用量灰字条目。
+ * live 事件先落地（pending=true 只显 token）；turn_end 后 usage store 拉记录
+ * reconcile 补上折算金额与口径（pending=false）。
+ */
+export interface UsageItem {
+  kind: 'usage';
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    model: string | null;
+    costUsd: number | null;
+    pricingSource: 'models.dev' | 'subscription' | null;
+    pending: boolean;
+  };
+}
 export type ConversationItem =
   | UserItem
   | TextItem
   | ThinkingItem
   | ToolItem
   | PermissionItem
-  | ErrorItem;
+  | ErrorItem
+  | UsageItem;
 
 export interface TaskConversation {
   sessionId: string | null;
@@ -72,6 +91,11 @@ interface ConversationState {
   applyEvent: (taskId: string, event: AgentEvent) => void;
   /** 发送消息后的乐观用户条目（持久化侧由 main 落库） */
   appendUserMessage: (taskId: string, text: string) => void;
+  /**
+   * ticket #27：turn_end 后 usage store 拉到落库记录，把时间线里 pending 的
+   * 用量条目按序配对替换为含折算口径的记录（记录不足时多余条目保持 pending）。
+   */
+  reconcileUsage: (taskId: string, records: UsageRecord[]) => void;
   /** 清理已删除任务的渲染态 */
   prune: (existingTaskIds: Set<string>) => void;
 }
@@ -115,23 +139,29 @@ export const useConversationStore = create<ConversationState>()((set, get) => {
 
     applyHistory: (taskId, history) => {
       deltaBuffers.set(taskId, { text: '', thinking: '' });
-      const items: ConversationItem[] = [];
-      // messages 与 tool_calls 共用 seq 计数器（迁移 003），按 seq 归并单时间线
+      // messages 与 tool_calls 共用 seq 计数器（迁移 003），按 seq 归并单时间线；
+      // ticket #27：按 turn 分组——每轮条目之后插该轮的用量灰字（usage_records.turn_id 对齐）
       const merged = [
         ...history.messages.map((m) => ({ seq: m.seq, m })),
         ...history.toolCalls.map((t) => ({ seq: t.seq ?? Number.MAX_SAFE_INTEGER, t })),
       ].sort((a, b) => a.seq - b.seq);
+      const itemsByTurn = new Map<string | null, ConversationItem[]>();
+      const pushItem = (turnId: string | null, item: ConversationItem): void => {
+        const list = itemsByTurn.get(turnId) ?? [];
+        list.push(item);
+        itemsByTurn.set(turnId, list);
+      };
       for (const entry of merged) {
         if ('m' in entry) {
           const { m } = entry;
-          if (m.role === 'user') items.push({ kind: 'user', text: m.content });
+          if (m.role === 'user') pushItem(m.turn_id, { kind: 'user', text: m.content });
           else if (m.role === 'assistant' && m.kind === 'thinking')
-            items.push({ kind: 'thinking', text: m.content, streaming: false });
+            pushItem(m.turn_id, { kind: 'thinking', text: m.content, streaming: false });
           else if (m.role === 'assistant')
-            items.push({ kind: 'text', text: m.content, streaming: false });
+            pushItem(m.turn_id, { kind: 'text', text: m.content, streaming: false });
         } else {
           const { t } = entry;
-          items.push({
+          pushItem(t.turn_id, {
             kind: 'tool',
             call: {
               id: t.id,
@@ -142,6 +172,26 @@ export const useConversationStore = create<ConversationState>()((set, get) => {
             },
           });
         }
+      }
+      const usageByTurn = new Map<string | null, UsageRecord[]>();
+      for (const r of history.usageRecords ?? []) {
+        const list = usageByTurn.get(r.turn_id) ?? [];
+        list.push(r);
+        usageByTurn.set(r.turn_id, list);
+      }
+      const items: ConversationItem[] = [];
+      for (const turn of history.turns) {
+        items.push(...(itemsByTurn.get(turn.id) ?? []));
+        itemsByTurn.delete(turn.id);
+        for (const r of usageByTurn.get(turn.id) ?? []) {
+          items.push({ kind: 'usage', usage: usageItemFromRecord(r) });
+          usageByTurn.delete(turn.id);
+        }
+      }
+      // turn_id 为 NULL 的残留（如 turn 已关后迟到的记录）依次挂到时间线尾部
+      items.push(...(itemsByTurn.get(null) ?? []));
+      for (const r of usageByTurn.get(null) ?? []) {
+        items.push({ kind: 'usage', usage: usageItemFromRecord(r) });
       }
       const runningTurn = history.turns.some((t) => t.status === 'running');
       // ticket #20：仍 pending 的审批行补到时间线尾部——重连/重启后审批托盘的渲染基线
@@ -185,6 +235,25 @@ export const useConversationStore = create<ConversationState>()((set, get) => {
     appendUserMessage: (taskId, text) => {
       flushDeltas(taskId);
       updateTask(taskId, (c) => ({ ...c, items: [...c.items, { kind: 'user', text }] }));
+    },
+
+    reconcileUsage: (taskId, records) => {
+      flushDeltas(taskId);
+      updateTask(taskId, (c) => {
+        const pendingIdx = c.items
+          .map((it, i) => (it.kind === 'usage' && it.usage.pending ? i : -1))
+          .filter((i) => i >= 0);
+        if (pendingIdx.length === 0) return c;
+        // 按序配对最后 N 条落库记录（recorded_at 升序由 main 保证）
+        const tail = records.slice(-pendingIdx.length);
+        const items = [...c.items];
+        pendingIdx.forEach((itemIdx, k) => {
+          const rec = tail[k];
+          if (!rec) return; // 记录尚未落库（竞态）：保持 pending，下轮 reconcile 再补
+          items[itemIdx] = { kind: 'usage', usage: usageItemFromRecord(rec) };
+        });
+        return { ...c, items };
+      });
     },
 
     prune: (existingTaskIds) => {
@@ -250,6 +319,28 @@ function applyNonDeltaEvent(c: TaskConversation, event: AgentEvent): TaskConvers
     case 'turn_end':
       return { ...c, items: sealStreaming(c.items), turnActive: false };
 
+    case 'usage':
+      // ticket #27：本轮末尾的用量灰字（pending——turn_end 后 reconcile 补折算口径）
+      return {
+        ...c,
+        items: [
+          ...c.items,
+          {
+            kind: 'usage',
+            usage: {
+              inputTokens: event.usage.inputTokens,
+              outputTokens: event.usage.outputTokens,
+              cacheReadTokens: event.usage.cacheReadTokens ?? 0,
+              cacheWriteTokens: event.usage.cacheWriteTokens ?? 0,
+              model: event.usage.model ?? null,
+              costUsd: null,
+              pricingSource: null,
+              pending: true,
+            },
+          },
+        ],
+      };
+
     case 'error':
       if (!event.fatal) return c;
       return { ...c, items: [...sealStreaming(c.items), { kind: 'error', message: event.message }] };
@@ -257,12 +348,25 @@ function applyNonDeltaEvent(c: TaskConversation, event: AgentEvent): TaskConvers
     case 'session_ended':
       return { ...c, items: sealStreaming(c.items), turnActive: false };
 
-    case 'usage':
     case 'text_delta':
     case 'thinking_delta':
-      return c; // delta 走合帧缓冲；usage 本票不呈现（#27 消费）
+      return c; // delta 走合帧缓冲
 
     default:
       return c;
   }
+}
+
+/** ticket #27：落库记录 → 时间线用量条目（含折算口径，pending=false） */
+function usageItemFromRecord(r: UsageRecord): UsageItem['usage'] {
+  return {
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    cacheReadTokens: r.cache_read_tokens,
+    cacheWriteTokens: r.cache_write_tokens,
+    model: r.model,
+    costUsd: r.cost_usd,
+    pricingSource: r.pricing_source,
+    pending: false,
+  };
 }

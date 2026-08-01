@@ -5,6 +5,8 @@ import { AgentPicker } from '../../components/pickers/AgentPicker';
 import { ProviderModelPicker } from '../../components/pickers/ProviderModelPicker';
 import { useAppStore } from '../../stores/appStore';
 import { useDataStore } from '../../stores/data';
+import { useUsageStore } from '../../stores/usage';
+import { describeTaskUsage, describeTaskUsageTitle } from '../../../../shared/usageFormat';
 import type { SidebarSectionDef } from '../registry';
 import '../../styles/worktree.css';
 
@@ -14,6 +16,8 @@ import '../../styles/worktree.css';
  * 顶部「新建任务」表单：需求描述 textarea + agent/provider/model picker
  * （agent picker 探测置灰 ticket #22；provider/model picker #21 实化，
  *  选择落库 task.provider_id/model）。
+ * ticket #27：任务项第三行 = 用量汇总 chip（token 总量 + 折算金额，灰阶小字，
+ * 口径全在 tooltip；无用量记录不渲染）。
  */
 
 function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
@@ -178,6 +182,18 @@ function TaskListSection(): React.JSX.Element {
   const setCurrentTaskId = useAppStore((s) => s.setCurrentTaskId);
   const [creating, setCreating] = useState(false);
 
+  // ticket #27：任务用量 chip 聚合（挂载 + 任务行变更广播时重拉；turn_end 实时刷新在 usage store）
+  const usageTotals = useUsageStore((s) => s.totals);
+  const refreshUsageTotals = useUsageStore((s) => s.refreshTotals);
+  useEffect(() => {
+    void refreshUsageTotals();
+    const api = window.openCowork;
+    if (!api) return;
+    return api.onTasksChanged(() => {
+      void refreshUsageTotals();
+    });
+  }, [refreshUsageTotals]);
+
   return (
     <div className="task-section">
       {creating ? (
@@ -212,6 +228,15 @@ function TaskListSection(): React.JSX.Element {
                   <span className="task-meta">
                     {t.workspace_name} · {agentLabel(t.agent_type)} · {STATUS_LABELS[t.status]}
                   </span>
+                  {usageTotals[t.id] && usageTotals[t.id].records > 0 && (
+                    <span
+                      className="task-usage"
+                      data-testid="task-usage-chip"
+                      title={describeTaskUsageTitle(usageTotals[t.id])}
+                    >
+                      {describeTaskUsage(usageTotals[t.id])}
+                    </span>
+                  )}
                 </span>
               </button>
             </li>

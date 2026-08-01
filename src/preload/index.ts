@@ -167,6 +167,14 @@ const api: OpenCoworkApi = {
     reprobe: (id: string) => ipcRenderer.invoke('custom-agents:reprobe', id),
   },
   // ── ticket #26 end ────────────────────────────────────────────────────
+
+  // ── ticket #27：用量与 context 水位 ──────────────────────────────────
+  usage: {
+    list: (taskId: string) => ipcRenderer.invoke('usage:list', taskId),
+    totals: () => ipcRenderer.invoke('usage:totals'),
+    context: (taskId: string) => ipcRenderer.invoke('usage:context', taskId),
+  },
+  // ── ticket #27 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);
