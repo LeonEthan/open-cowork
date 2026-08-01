@@ -101,6 +101,12 @@
   border-radius: var(--radius-pill);
   padding: 2px 10px;
   white-space: nowrap;
+  /* ticket #37 终审：版本串无上限（--version 首行原样），徽标须截断防溢出卡片；
+     完整串经 title 保留（见 agents.tsx） */
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
 }
 
 .agent-badge.ok {

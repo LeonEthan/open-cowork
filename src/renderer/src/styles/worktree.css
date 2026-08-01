@@ -15,7 +15,7 @@
   margin: 0;
 }
 .worktree-check-row .field-label {
-  /* 勾选行内标签与 checkbox 同高对齐（覆盖 .task-form .field-label 无额外排版需求） */
+  /* 勾选行内标签与 checkbox 同高对齐（无额外排版需求） */
   margin: 0;
 }
 .worktree-hint {

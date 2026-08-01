@@ -11,7 +11,7 @@ import { useAgentsStore } from '../../stores/agents';
  * ticket #23：pi driver 已接入（降级审批）——pi 项不再是「即将支持」，
  * 与其他三家同走「探测到即可选」逻辑（driverAvailable 翻转在 agentDetect.ts，本组件无需分支）。
  *
- * 样式复用 .task-form 的 field/select（§4 边框分层），不新增视觉元素。
+ * 样式复用 .picker-popover 的 field/select（§4 边框分层），不新增视觉元素。
  * data-testid="task-agent-select" 与占位 select 保持一致（e2e 兼容面）。
  */
 export function AgentPicker(props: {

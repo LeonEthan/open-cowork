@@ -146,7 +146,7 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
         {displayItems.map((item, i) => (
           <ConversationItemView key={i} item={item} themeKey={themeKey} />
         ))}
-        <div ref={endRef} />
+        <div ref={endRef} className="conversation-end" />
       </div>
 
       {/* ticket #36（§3/§4）：审批托盘 + composer 收进底部 sticky dock——
@@ -172,7 +172,12 @@ function ConversationItemView(props: { item: ConversationItem; themeKey: string 
       );
     case 'text':
       return (
-        <div className="msg msg-assistant" data-testid="msg-assistant">
+        // ticket #37 终审：streaming 态类让 .md 及尾随段落 inline 化，
+        // blink 光标附在流式文本行尾而非掉到独立一行（§5 光标=行尾插入点语义）
+        <div
+          className={`msg msg-assistant${item.streaming ? ' streaming' : ''}`}
+          data-testid="msg-assistant"
+        >
           <Markdown text={item.text} themeKey={props.themeKey} />
           {item.streaming && <span className="stream-cursor" data-testid="stream-cursor" />}
         </div>

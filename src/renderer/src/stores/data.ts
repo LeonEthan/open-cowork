@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CreateTaskInput, Task, TaskListItem, Workspace } from '../../../shared/api';
+import type { TaskListItem, Workspace } from '../../../shared/api';
 import { useAppStore } from './appStore';
 import { useConversationStore } from './conversation';
 
@@ -22,8 +22,6 @@ interface DataState {
   addWorkspaceViaDialog: () => Promise<void>;
   addWorkspaceByPath: (dirPath: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
-  /** 创建任务；成功后刷新并选中该任务，返回创建的任务（失败返回 null 并记 lastError） */
-  createTask: (input: CreateTaskInput) => Promise<Task | null>;
 }
 
 /** ticket #36（additive 导出）：IPC 错误消息剥壳——首页 composer 建任务流程同口径复用 */
@@ -88,20 +86,5 @@ export const useDataStore = create<DataState>()((set, get) => ({
       set({ lastError: errMessage(e) });
     }
     await get().refreshAll();
-  },
-
-  createTask: async (input) => {
-    const api = window.openCowork;
-    if (!api) return null;
-    try {
-      const task = await api.tasks.create(input);
-      set({ lastError: null });
-      await get().refreshAll();
-      useAppStore.getState().setCurrentTaskId(task.id);
-      return task;
-    } catch (e) {
-      set({ lastError: errMessage(e) });
-      return null;
-    }
   },
 }));
