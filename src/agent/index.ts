@@ -24,6 +24,7 @@ import { ProcessRegistry } from './processRegistry';
  *    b) process.parentPort → main（Turn/Message/ToolCall/UsageRecord 持久化 + 状态机迁移）；
  * 3. JSONL 旁路：原始归一事件与入向指令逐行写
  *    <dataDir>/events/<taskId>/<sessionId>.jsonl（排障/回放，ARCHITECTURE §5）；
+ *    start 指令落盘前脱敏（env 值 → <redacted>，凭证红线，见 redactStartCommandForBypass）；
  * 4. 进程注册表两级清理：运行时 Map + 启动时 sweepStale（见 processRegistry.ts）；
  * 5. 审批中继（ticket #20 替换全允许桩）：driver permissionHandler → permission-ask
  *    转发 main 审批服务（策略引擎/托盘决议），agent-command permission-respond 回执
@@ -241,6 +242,29 @@ interface PermissionRespondCommand {
 
 type AgentCommand = StartCommand | FollowupCommand | CancelCommand | PermissionRespondCommand;
 
+// ── 凭证红线（audit phase-g）：start 指令携带 provider 明文密钥（env /
+// customAgent.env），整体落 JSONL 旁路即成明文落盘。落盘前脱敏投影——
+// 键名保留供排障，值一律 <redacted>（运行用指令本体不受影响）。
+
+function redactEnv(env: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.keys(env).map((k) => [k, '<redacted>']));
+}
+
+function redactStartCommandForBypass(cmd: StartCommand): StartCommand {
+  return {
+    ...cmd,
+    ...(cmd.env ? { env: redactEnv(cmd.env) } : {}),
+    ...(cmd.customAgent
+      ? {
+          customAgent: {
+            ...cmd.customAgent,
+            ...(cmd.customAgent.env ? { env: redactEnv(cmd.customAgent.env) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function handleStart(cmd: StartCommand): void {
   if (sessions.has(cmd.taskId)) {
     console.warn(`[agent] 任务 ${cmd.taskId} 已有活跃会话，忽略重复 start`);
@@ -262,7 +286,7 @@ function handleStart(cmd: StartCommand): void {
     ended: false,
   };
   sessions.set(cmd.taskId, entry);
-  bypassWrite(entry, 'in', cmd);
+  bypassWrite(entry, 'in', redactStartCommandForBypass(cmd));
 
   if (!def) {
     dispatchEvent(entry, {
