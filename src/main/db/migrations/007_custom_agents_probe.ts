@@ -1,5 +1,5 @@
 /**
- * 迁移 008（ticket #26，additive）：custom_agents 补「最近一次探测结果」列。
+ * 迁移 007（ticket #26，additive）：custom_agents 补「最近一次探测结果」列。
  *
  * 表本体在迁移 001 已有（id/name/command/args_json/protocol/env_json/created_at）；
  * 本迁移只新增可空列 last_probe_json——探测结果快照（{ok, resolvedPath, version, error, at}），
