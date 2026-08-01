@@ -27,6 +27,14 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
 export default function register(ctx: ServiceContext): void {
   const manager = new PtySessionManager();
 
+  // 与全仓 senderAllowed 惯例同款（usage.ts/agent.ts/changes.ts/approvals.ts）：
+  // 仅主窗口渲染端可调。pty:write 是任意字节注入用户登录 shell 的写面，
+  // 三个 send 通道与 pty:create 一样必须过这道闸门。
+  const senderAllowed = (event: { sender: Electron.WebContents }): boolean => {
+    const win = ctx.getMainWindow();
+    return !!win && event.sender === win.webContents;
+  };
+
   // 窗口级清理（macOS 关窗不退 app、窗口可经 activate 重建，故按实例 hook 一次）；
   // before-quit 兜底，保证任何退出路径下不残留子进程。
   const hookedWindows = new WeakSet<object>();
@@ -43,8 +51,7 @@ export default function register(ctx: ServiceContext): void {
     if (typeof key !== 'string' || !KEY_PATTERN.test(key)) {
       throw new Error('[pty] 非法会话 key');
     }
-    const win = ctx.getMainWindow();
-    if (!win || event.sender !== win.webContents) {
+    if (!senderAllowed(event)) {
       throw new Error('[pty] 来源非法');
     }
     hookWindowCleanup();
@@ -65,18 +72,21 @@ export default function register(ctx: ServiceContext): void {
     return { ok: true as const, cwd: result.cwd, created: result.created };
   });
 
-  ctx.ipcMain.on('pty:write', (_event, key: unknown, data: unknown) => {
+  ctx.ipcMain.on('pty:write', (event, key: unknown, data: unknown) => {
+    if (!senderAllowed(event)) return;
     if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
     if (typeof data !== 'string' || data.length > MAX_WRITE_LEN) return;
     manager.write(key, data);
   });
 
-  ctx.ipcMain.on('pty:resize', (_event, key: unknown, cols: unknown, rows: unknown) => {
+  ctx.ipcMain.on('pty:resize', (event, key: unknown, cols: unknown, rows: unknown) => {
+    if (!senderAllowed(event)) return;
     if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
     manager.resize(key, clampInt(cols, 2, 500, 80), clampInt(rows, 1, 200, 24));
   });
 
-  ctx.ipcMain.on('pty:dispose', (_event, key: unknown) => {
+  ctx.ipcMain.on('pty:dispose', (event, key: unknown) => {
+    if (!senderAllowed(event)) return;
     if (typeof key !== 'string' || !KEY_PATTERN.test(key)) return;
     manager.dispose(key);
   });
