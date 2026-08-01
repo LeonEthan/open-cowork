@@ -161,14 +161,19 @@ test('base 漂移：任务创建后原仓新提交 → 回流阻断并提示 →
     await setupWorktreeTask(app, wsDir, '漂移验证任务');
     const win = (await app.windows())[0];
 
+    // 检查栏上下文化（§1.2/ticket #34）：任务未跑 agent 无变更，栏不占位——
+    // 先手动唤起并切到变更 tab，让 worktree 面板在漂移发生前挂载取快照（快照无漂移，守卫在服务端兜底）
+    await win.getByTestId('toggle-inspector').click();
+    await expect(win.getByTestId('inspector')).toBeVisible();
+    await win.getByTestId('inspector-tab-changes').click();
+    await expect(win.getByTestId('worktree-panel')).toBeVisible({ timeout: 10_000 });
+
     // 任务创建后原仓前进一次提交（base 漂移；面板状态为创建时的快照，漂移由服务端守卫兜底）
     writeFileSync(join(wsDir, 'upstream.txt'), 'upstream\n');
     git(wsDir, ['add', '-A']);
     git(wsDir, ['commit', '-q', '-m', 'upstream work']);
 
     // 变更 tab：worktree 面板在；点「回流到原目录」→ 服务端漂移守卫阻断 → 提示 + 强制路径
-    await win.getByTestId('inspector-tab-changes').click();
-    await expect(win.getByTestId('worktree-panel')).toBeVisible({ timeout: 10_000 });
     await win.getByTestId('worktree-backflow').click();
     await expect(win.getByTestId('worktree-error')).toContainText('漂移', { timeout: 10_000 });
     await expect(win.getByTestId('worktree-drift-hint')).toBeVisible();

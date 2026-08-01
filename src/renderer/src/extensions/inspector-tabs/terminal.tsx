@@ -3,6 +3,7 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useUiStore } from '../../stores/ui';
 import type { InspectorTabDef } from '../registry';
 
 /**
@@ -127,6 +128,11 @@ function TerminalTab(): React.JSX.Element {
   const currentTaskId = useAppStore((s) => s.currentTaskId);
   const key = currentTaskId ?? GLOBAL_KEY;
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // ticket #34：用户点开过终端 tab 即视为「终端活跃」（检查栏自动规则因子，ui store 瞬态）
+  useEffect(() => {
+    useUiStore.getState().markTerminalActivated();
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;

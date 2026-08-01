@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { settingsSections } from '../extensions/registry';
+import { useInspectorVisible } from '../hooks/useInspectorVisible';
 import { STATUS_LABELS, agentLabel, statusDotClass } from '../lib/taskStatus';
 import { useAppStore } from '../stores/appStore';
 import { useConversationStore } from '../stores/conversation';
@@ -22,6 +23,7 @@ import { Markdown } from './Markdown';
  *   failed 态原因 + 重试；底部输入区：单圆角框 + agent/model chip + 发送/取消键；
  * - ticket #27：每轮末尾用量灰字（token + 折算金额，口径在 tooltip）；
  *   输入区 chips 行末尾 context 水位环（>80% 警告 + 压缩建议）；
+ * - ticket #34：内容区右上角检查栏开关（小图标 + ⌘J；变更新内容时带状态点提示）；
  * - 未选中任务：保持空态（文案克制，§7）。
  */
 
@@ -33,6 +35,11 @@ export function DocumentFlow(): React.JSX.Element {
   const tasks = useDataStore((s) => s.tasks);
   const task = currentTaskId ? (tasks.find((t) => t.id === currentTaskId) ?? null) : null;
 
+  // ticket #34：检查栏开关居内容区右上角（§1.2；左上角是侧栏开关，不得占用）
+  const inspectorVisible = useInspectorVisible();
+  const toggleInspector = useUiStore((s) => s.toggleInspector);
+  const changesBadge = useUiStore((s) => s.changesBadge);
+
   return (
     <main
       className={`content${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
@@ -40,6 +47,20 @@ export function DocumentFlow(): React.JSX.Element {
     >
       {/* ticket #33（§1.1）：折叠开关小图标行居内容区左上（设置/文档视图均常驻） */}
       <ContentControls />
+      {/* ticket #34（§1.2）：检查栏开关居内容区右上角（⌘J；变更新内容带状态点） */}
+      <button
+        type="button"
+        className="icon-btn inspector-toggle"
+        data-testid="toggle-inspector"
+        aria-pressed={inspectorVisible}
+        title={inspectorVisible ? '隐藏检查栏（⌘J）' : '显示检查栏（⌘J）'}
+        onClick={() => toggleInspector(inspectorVisible)}
+      >
+        ⇥
+        {changesBadge && (
+          <span className="inspector-badge" data-testid="inspector-badge" aria-hidden />
+        )}
+      </button>
       <div className="content-inner">
         {view === 'settings' ? (
           <>

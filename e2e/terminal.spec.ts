@@ -22,6 +22,10 @@ test('terminal tab: shell 就绪后键入命令有执行回显', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
+    // 检查栏上下文化（§1.2/ticket #34）：空态不占位，先经内容区右上角开关手动唤起（⌘J 同效）
+    await win.getByTestId('toggle-inspector').click();
+    await expect(win.getByTestId('inspector')).toBeVisible();
+
     // 打开终端 tab（懒启动：此刻才起 shell）
     await win.getByTestId('inspector-tab-terminal').click();
     const host = win.getByTestId('terminal-host');
