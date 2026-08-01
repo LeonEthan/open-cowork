@@ -19,6 +19,8 @@ export interface CreateTaskInput {
   agentType: string;
   providerId?: string | null;
   model?: string | null;
+  // ── ticket #25（additive）：创建时 opt-in worktree 隔离（默认 false = 共享原目录） ──
+  useWorktree?: boolean;
 }
 
 /** 侧栏/文档流列表项：附带 workspace 名 + provider 名（元信息展示用，DESIGN.md §1） */
@@ -51,7 +53,8 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
     model: input.model ?? null,
     permission_mode: 'auto',
     status: 'ready',
-    use_worktree: 0,
+    // #25：opt-in 落列；worktree 本体由 services/tasks.ts 在入库后创建（失败回滚任务行）
+    use_worktree: input.useWorktree ? 1 : 0,
     worktree_path: null,
     base_sha: null,
     session_id: null,
@@ -154,4 +157,22 @@ export function setPermissionMode(
   if (!task) throw new Error(`任务不存在: ${id}`);
   db.prepare('UPDATE tasks SET permission_mode = ?, updated_at = ? WHERE id = ?').run(mode, now, id);
   return { ...task, permission_mode: mode, updated_at: now };
+}
+
+// ── ticket #25：worktree 隔离（additive；不涉状态机） ─────────────────────
+
+/**
+ * 写入/清空 worktree 集中目录路径（创建成功落路径；手动清理置 null——
+ * 终端 cwd / diff 捕获 / agent cwd 三处的 worktree_path ?? workspace.path 回退随之生效）。
+ */
+export function setWorktreePath(
+  db: Database,
+  id: string,
+  path: string | null,
+  now: number = Date.now(),
+): Task {
+  const task = getById(db, id);
+  if (!task) throw new Error(`任务不存在: ${id}`);
+  db.prepare('UPDATE tasks SET worktree_path = ?, updated_at = ? WHERE id = ?').run(path, now, id);
+  return { ...task, worktree_path: path, updated_at: now };
 }

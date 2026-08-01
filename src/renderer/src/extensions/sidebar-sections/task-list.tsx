@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import type { WorkspaceWorktreeInfo } from '../../../../shared/api';
 import { STATUS_LABELS, agentLabel, statusDotClass } from '../../lib/taskStatus';
 import { AgentPicker } from '../../components/pickers/AgentPicker';
 import { ProviderModelPicker } from '../../components/pickers/ProviderModelPicker';
 import { useAppStore } from '../../stores/appStore';
 import { useDataStore } from '../../stores/data';
 import type { SidebarSectionDef } from '../registry';
+import '../../styles/worktree.css';
 
 /**
  * 内置「任务」侧栏区块（ticket #18 实装，DESIGN.md §1）：
@@ -26,12 +28,37 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
   const [model, setModel] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ── ticket #25：worktree 隔离 opt-in（仅 git workspace 可选；非 git 置灰提示） ──
+  const [useWorktree, setUseWorktree] = useState(false);
+  const [wtInfo, setWtInfo] = useState<WorkspaceWorktreeInfo | null>(null);
+  // ── ticket #25 end ──
+
   // 表单打开期间 workspace 列表变化（如刚添加第一个）时回填默认选择
   useEffect(() => {
     if (!workspaces.some((w) => w.id === workspaceId)) {
       setWorkspaceId(workspaces[0]?.id ?? '');
     }
   }, [workspaces, workspaceId]);
+
+  // ── ticket #25：选中 workspace 变化 → 探测 worktree 可用性；不可用时收回勾选 ──
+  useEffect(() => {
+    const api = window.openCowork;
+    if (!api || workspaceId.length === 0) {
+      setWtInfo(null);
+      setUseWorktree(false);
+      return;
+    }
+    let cancelled = false;
+    void api.worktree.workspaceCheck(workspaceId).then((info) => {
+      if (cancelled) return;
+      setWtInfo(info);
+      if (!info.isGitRepo || !info.hasCommits) setUseWorktree(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+  // ── ticket #25 end ──
 
   const canSubmit =
     workspaceId.length > 0 && prompt.trim().length > 0 && agentType.length > 0 && !submitting;
@@ -45,6 +72,8 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
       agentType,
       providerId: providerId || null,
       model: model || null,
+      // ── ticket #25：勾选且可用才下发（防御置灰态的脏勾选） ──
+      useWorktree: useWorktree && wtInfo?.isGitRepo === true && wtInfo.hasCommits,
     });
     setSubmitting(false);
     if (task) props.onDone();
@@ -95,6 +124,31 @@ function NewTaskForm(props: { onDone: () => void }): React.JSX.Element {
         onProviderChange={setProviderId}
         onModelChange={setModel}
       />
+      {/* ── ticket #25：worktree 隔离勾选（git workspace 可选；非 git/无提交置灰提示） ── */}
+      <label className="field">
+        <span className="worktree-check-row">
+          <input
+            type="checkbox"
+            data-testid="task-worktree-checkbox"
+            checked={useWorktree}
+            disabled={!wtInfo || !wtInfo.isGitRepo || !wtInfo.hasCommits}
+            onChange={(e) => setUseWorktree(e.target.checked)}
+          />
+          <span className="field-label">worktree 隔离</span>
+        </span>
+        <span className="muted worktree-hint" data-testid="task-worktree-hint">
+          {!wtInfo
+            ? '检测 workspace 是否为 git 仓库…'
+            : !wtInfo.isGitRepo
+              ? '仅 git workspace 可用 worktree 隔离（当前目录不在 git 工作树内）'
+              : !wtInfo.hasCommits
+                ? '仓库尚无提交，请先完成首次提交后再启用 worktree 隔离'
+                : useWorktree
+                  ? '任务将在独立 worktree 目录运行，原目录零改动；复查后可回流到原目录'
+                  : '在独立 worktree 目录运行任务，改动与原目录隔离'}
+        </span>
+      </label>
+      {/* ── ticket #25 end ── */}
       {lastError && (
         <p className="form-error" role="alert" data-testid="task-form-error">
           {lastError}

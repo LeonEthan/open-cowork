@@ -56,6 +56,11 @@ export interface OpenCoworkApi {
   changes: ChangesApi;
   // ── ticket #24 end ────────────────────────────────────────────────────
 
+  // ── ticket #25：worktree 隔离与回流 ───────────────────────────────────
+  /** per-task worktree：状态查询 + 回流到原目录 + 手动清理 */
+  worktree: WorktreeApi;
+  // ── ticket #25 end ────────────────────────────────────────────────────
+
   // ── ticket #26：agent 环境治理 + 自定义 ACP agent ─────────────────────
   /** 环境卡片数据源（探测升级/路径修复/探测日志）；picker 仍走 #22 agents 组 */
   agentEnvironment: AgentEnvironmentApi;
@@ -79,6 +84,8 @@ export interface CreateTaskInput {
   agentType: string;
   providerId?: string | null;
   model?: string | null;
+  /** ticket #25（additive 可选字段）：opt-in worktree 隔离（仅 git workspace 生效） */
+  useWorktree?: boolean;
 }
 
 export interface WorkspaceApi {
@@ -270,6 +277,50 @@ export interface ChangesApi {
   rollbackAll: (taskId: string) => Promise<{ ok: true }>;
 }
 // ── ticket #24 end ──────────────────────────────────────────────────────
+
+// ── ticket #25：worktree 隔离与回流 ─────────────────────────────────────
+// 独立分组（additive；main 实现见 src/main/worktree/worktree.ts + services/worktree.ts）
+
+/** worktree 状态（检查栏「回流到原目录」区块渲染基线） */
+export interface WorktreeStatus {
+  /** 任务创建时勾选了 worktree 隔离 */
+  enabled: boolean;
+  /** 集中目录绝对路径（<数据根>/worktrees/<taskId>）；已清理为 null */
+  path: string | null;
+  /** 目录当前是否在磁盘上（外部被删为 false） */
+  exists: boolean;
+  /** 逃生舱分支名 cowork/<taskId>（enabled 时恒有值） */
+  branch: string | null;
+  /** 创建时 pin 的 base SHA */
+  baseSha: string | null;
+  /** 原仓当前 HEAD（worktree 活跃时探测；否则 null） */
+  headSha: string | null;
+  /** base 漂移：原仓 HEAD 已离开 pin 的 base——阻断自动回流 */
+  drifted: boolean;
+}
+
+/** workspace 的 worktree 可用性（创建表单勾选框启用/置灰依据） */
+export interface WorkspaceWorktreeInfo {
+  isGitRepo: boolean;
+  /** 无提交的仓库无法 pin base SHA（需先完成首次提交） */
+  hasCommits: boolean;
+}
+
+export interface WorktreeApi {
+  /** 任务的 worktree 状态（路径/分支/base/HEAD/漂移） */
+  status: (taskId: string) => Promise<WorktreeStatus>;
+  /** workspace 是否可选 worktree 隔离 */
+  workspaceCheck: (workspaceId: string) => Promise<WorkspaceWorktreeInfo>;
+  /**
+   * 回流：worktree 改动（含 untracked）git apply 落回原目录，未提交形态；
+   * base 漂移未 force → reject（UI 二次确认后 force=true 重调）；
+   * apply 失败 → reject，worktree 目录与分支保留作逃生舱（错误文案含补救指引）。
+   */
+  backflow: (taskId: string, opts?: { force?: boolean }) => Promise<{ ok: true; files: number }>;
+  /** 手动清理：worktree remove + 集中目录删除（磁盘回收）；分支默认保留（deleteBranch=true 才删） */
+  cleanup: (taskId: string, opts?: { deleteBranch?: boolean }) => Promise<{ ok: true }>;
+}
+// ── ticket #25 end ──────────────────────────────────────────────────────
 
 // ── ticket #26：agent 环境治理 + 自定义 ACP agent（additive） ─────────────
 // 形状与 main 侧 services/agentDetect.ts / services/customAgents.ts 对齐；

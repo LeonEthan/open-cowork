@@ -1,0 +1,66 @@
+/*
+ * worktree 隔离与回流样式（ticket #25）。
+ * 设计宪法合规：只引用 tokens.css 变量、零阴影（边框分层）、无动效；
+ * 语义色仅白名单（漂移提示=警告橙 --warning、错误=--danger、成功=--success）。
+ */
+
+/* ── 创建任务表单的 opt-in 勾选（task-list.tsx #25 区块） ── */
+.worktree-check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.worktree-check-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.worktree-check-row .field-label {
+  /* 勾选行内标签与 checkbox 同高对齐（覆盖 .task-form .field-label 无额外排版需求） */
+  margin: 0;
+}
+.worktree-hint {
+  font-size: 12px;
+}
+
+/* ── 检查栏「变更」tab 的 worktree 区块（WorktreePanel） ── */
+.worktree-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg);
+}
+.worktree-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.worktree-title {
+  color: var(--ink);
+}
+.worktree-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.worktree-drift {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+.worktree-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.worktree-notice {
+  margin: 0;
+  font-size: 12px;
+  color: var(--success);
+}

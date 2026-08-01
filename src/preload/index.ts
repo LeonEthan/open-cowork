@@ -139,6 +139,18 @@ const api: OpenCoworkApi = {
   },
   // ── ticket #24 end ────────────────────────────────────────────────────
 
+  // ── ticket #25：worktree 隔离与回流 ───────────────────────────────────
+  worktree: {
+    status: (taskId: string) => ipcRenderer.invoke('worktree:status', taskId),
+    workspaceCheck: (workspaceId: string) =>
+      ipcRenderer.invoke('worktree:workspace-check', workspaceId),
+    backflow: (taskId: string, opts?: { force?: boolean }) =>
+      ipcRenderer.invoke('worktree:backflow', taskId, opts),
+    cleanup: (taskId: string, opts?: { deleteBranch?: boolean }) =>
+      ipcRenderer.invoke('worktree:cleanup', taskId, opts),
+  },
+  // ── ticket #25 end ────────────────────────────────────────────────────
+
   // ── ticket #26：agent 环境治理 + 自定义 ACP agent ─────────────────────
   agentEnvironment: {
     list: () => ipcRenderer.invoke('agents:list'),
