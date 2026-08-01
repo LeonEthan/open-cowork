@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * 用量与 context 水位（ticket #27）端到端：
@@ -45,14 +46,10 @@ async function launchWithScript(opts: {
   });
 }
 
-/** 添加 workspace（经桥直给路径）并 reload 让侧栏见效 */
+/** 添加 workspace（经桥直给路径）并 reload 让侧栏见效（ticket #36：实现迁 helpers.ts） */
 async function addWorkspace(app: ElectronApplication, wsDir: string): Promise<void> {
   const win = await app.firstWindow();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
 }
 
 test('① 带价目一轮对话：轮次灰字 + 任务 chip 数值与 models.dev 口径标注', async () => {
@@ -86,19 +83,17 @@ test('① 带价目一轮对话：轮次灰字 + 任务 chip 数值与 models.de
     await expect(win.getByTestId('provider-item')).toHaveCount(1);
 
     // workspace + 任务（provider=Anthropic，model=claude-sonnet-4-5）
+    // ticket #36：首页 composer 合并 picker 选择；发送即开跑（create+start 一步到位）
     await addWorkspace(app, wsDir);
-    await win.getByTestId('new-task-toggle').click();
-    await win.getByTestId('task-prompt-input').fill('写个函数');
-    await win.getByTestId('task-agent-select').selectOption('claude-code');
-    await win.getByTestId('task-provider-select').selectOption({ label: 'Anthropic' });
-    const modelSelect = win.getByTestId('task-model-select');
-    await expect(modelSelect.locator('option[value="claude-sonnet-4-5"]')).toHaveCount(1);
-    await modelSelect.selectOption('claude-sonnet-4-5');
-    await win.getByTestId('task-create-submit').click();
-    await expect(win.getByTestId('task-item')).toHaveCount(1);
+    await createTaskViaComposer(win, {
+      prompt: '写个函数',
+      agent: 'claude-code',
+      provider: { label: 'Anthropic' },
+      awaitModelValue: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-5',
+    });
 
-    // 开跑 → 等 awaiting_review
-    await win.getByTestId('send-button').click();
+    // 开跑 → 等 awaiting_review（composer 发送即启动）
     await expect(win.getByTestId('task-item')).toHaveAttribute('data-status', 'awaiting_review');
 
     // 轮次灰字：reconcile 后带折算金额与口径（10000×$3 + 2000×$15 /1M = $0.06；缓存不折算）
@@ -143,14 +138,9 @@ test('② 订阅途径 + 大 inputTokens：灰字标「仅供参考」，水位�
     await expect(win.getByTestId('task-sidebar')).toBeVisible();
 
     await addWorkspace(app, wsDir);
-    await win.getByTestId('new-task-toggle').click();
-    await win.getByTestId('task-prompt-input').fill('大上下文任务');
-    await win.getByTestId('task-agent-select').selectOption('claude-code');
-    // 不选 provider/model = 订阅途径（agent 自带登录态）
-    await win.getByTestId('task-create-submit').click();
-    await expect(win.getByTestId('task-item')).toHaveCount(1);
+    // ticket #36：不选 provider/model = 订阅途径（agent 自带登录态）；发送即开跑
+    await createTaskViaComposer(win, { prompt: '大上下文任务', agent: 'claude-code' });
 
-    await win.getByTestId('send-button').click();
     await expect(win.getByTestId('task-item')).toHaveAttribute('data-status', 'awaiting_review');
 
     // 轮次灰字：订阅制口径（不折算金额）

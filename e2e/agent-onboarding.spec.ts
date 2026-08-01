@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import {
+  closeAgentModelPicker,
+  focusHomeComposer,
+  openAgentModelPicker,
+} from './helpers';
 
 /**
  * Agent 探测、引导与修复 + 自定义 ACP（ticket #26）端到端：
@@ -112,7 +117,9 @@ test('横幅：未安装出现 → 设置卡片 → 路径修复重验证 → �
     await expect(win.getByTestId('agent-banner')).toBeVisible({ timeout: 10_000 });
 
     await win.getByTestId('open-settings').click(); // 回主界面
-    await win.getByTestId('new-task-toggle').click();
+    // ticket #36：picker 收进首页 composer 动作行的合并弹出层
+    await focusHomeComposer(win);
+    await openAgentModelPicker(win);
     const select = win.getByTestId('task-agent-select');
     await expect(select).toBeEnabled({ timeout: 10_000 });
     const customOption = select.locator('option[data-agent-id^="custom:"]');
@@ -169,8 +176,10 @@ test('自定义 ACP agent：注册 → picker 可选 → 一轮对话跑通', as
     await expect(customCard.locator('.agent-badge')).toContainText('已安装', { timeout: 15_000 });
 
     // 回到主界面建任务：picker 中自定义 agent 可选（未置灰）
+    // ticket #36：picker 在首页 composer 合并弹出层内；发送 = create+start 一步到位
     await win.getByTestId('open-settings').click();
-    await win.getByTestId('new-task-toggle').click();
+    await focusHomeComposer(win);
+    await openAgentModelPicker(win);
     const select = win.getByTestId('task-agent-select');
     await expect(select).toBeEnabled({ timeout: 10_000 });
     const customOption = select.locator('option[data-agent-id^="custom:"]');
@@ -178,14 +187,15 @@ test('自定义 ACP agent：注册 → picker 可选 → 一轮对话跑通', as
     await expect(customOption).not.toHaveAttribute('disabled', '');
     await expect(customOption).toContainText('fake-acp-agent');
     const customValue = await customOption.getAttribute('value');
-    await win.getByTestId('task-prompt-input').fill('实现一个打招呼函数');
     await select.selectOption(customValue!);
-    await win.getByTestId('task-create-submit').click();
+    await closeAgentModelPicker(win);
+    await win.getByTestId('composer-input').fill('实现一个打招呼函数');
+    const send = win.getByTestId('send-button');
+    await expect(send).toBeEnabled();
+    await send.click();
     await expect(win.getByTestId('task-item')).toHaveCount(1);
 
-    // 开跑：ACP 握手 → 一轮对话 → 文档流渲染 → 待复查
-    await expect(win.getByTestId('detail-status-label')).toHaveText('就绪');
-    await win.getByTestId('send-button').click();
+    // 开跑（composer 发送即启动）：ACP 握手 → 一轮对话 → 文档流渲染 → 待复查
     await expect(win.getByTestId('msg-assistant').first()).toContainText('好的，这是', {
       timeout: 15_000,
     });

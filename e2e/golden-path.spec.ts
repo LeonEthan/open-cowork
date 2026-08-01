@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * E2E 黄金路径 smoke（ticket #29，第三道测试接缝收口）：
@@ -49,7 +50,7 @@ async function launchWithScript(dataDir: string, script: unknown[]): Promise<Ele
   });
 }
 
-/** 添加 workspace（bridge 直给路径，原生 dialog 不可驱动）+ 经 UI 建任务 */
+/** 添加 workspace（bridge 直给路径，原生 dialog 不可驱动）+ 经首页 composer 建任务并开跑（ticket #36） */
 async function setupWorkspaceAndTask(
   app: ElectronApplication,
   wsDir: string,
@@ -58,16 +59,8 @@ async function setupWorkspaceAndTask(
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
-  await win.getByTestId('task-agent-select').selectOption('claude-code');
-  await win.getByTestId('task-create-submit').click();
-  await expect(win.getByTestId('task-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
+  await createTaskViaComposer(win, { prompt, agent: 'claude-code' });
 }
 
 /** JSONL 旁路 events/<taskId>/<sessionId>.jsonl 全文（未落盘返回 ''） */
@@ -134,11 +127,8 @@ test('黄金路径：添加 workspace → 建任务 → ⌘1 放行 → diff 复
     await setupWorkspaceAndTask(app, wsDir, '更新打招呼文件');
     const win = (await app.windows())[0];
 
-    // 创建后自动选中：ready 态输入区为「开始」
-    await expect(win.getByTestId('detail-status-label')).toHaveText('就绪');
-    await win.getByTestId('send-button').click();
-
-    // 状态机 ①：ready → running（断言起点 = 本次点击；脚本 900ms 节拍内状态不会翻走）
+    // ticket #36：composer 发送 = create+start 一步到位——创建后直接进 running
+    // 状态机 ①：ready → running（断言起点 = composer 发送；脚本 900ms 节拍内状态不会翻走）
     await expect(win.getByTestId('detail-status-label')).toHaveText('运行中', {
       timeout: 15_000,
     });
@@ -259,8 +249,8 @@ test('黄金路径（非 git 简版）：快照兜底复查 → 全部回滚 →
   try {
     await setupWorkspaceAndTask(app, wsDir, '记笔记到文件');
     const win = (await app.windows())[0];
-    await win.getByTestId('send-button').click();
 
+    // ticket #36：composer 发送即开跑——直接等 turn_end → 待复查
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
       timeout: 15_000,
     });

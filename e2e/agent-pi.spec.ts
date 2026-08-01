@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import {
+  addWorkspaceViaBridge,
+  closeAgentModelPicker,
+  focusHomeComposer,
+  openAgentModelPicker,
+} from './helpers';
 
 /**
  * pi driver（ticket #23）端到端（降级接入 + 静态审批策略）：
@@ -41,27 +47,36 @@ async function launchApp(opts: LaunchOpts): Promise<ElectronApplication> {
   return electron.launch({ args: ['.'], env, timeout: 30_000 });
 }
 
-/** 建 workspace + 建 pi 任务（创建后自动选中，就绪态） */
-async function setupWorkspaceAndPiTask(
+/**
+ * 建 workspace + 首页 composer 备好 pi 任务（agent 已选、需求已填，未发送——
+ * ticket #36：发送 = create+start 一步到位，权限档位须在发送前设定，
+ * 故发送留给各用例在档位断言/切换后自行触发）
+ */
+async function preparePiComposerTask(
   win: Awaited<ReturnType<ElectronApplication['firstWindow']>>,
   wsDir: string,
   prompt: string,
 ): Promise<void> {
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
+  await addWorkspaceViaBridge(win, wsDir);
+  await focusHomeComposer(win);
+  await openAgentModelPicker(win);
   const select = win.getByTestId('task-agent-select');
   await expect(select).toBeEnabled({ timeout: 10_000 });
   await select.selectOption('pi');
-  await win.getByTestId('task-create-submit').click();
+  await closeAgentModelPicker(win);
+  await win.getByTestId('composer-input').fill(prompt);
+}
+
+/** 发送（create+start 一步到位）并断言任务行出现 */
+async function sendComposerTask(
+  win: Awaited<ReturnType<ElectronApplication['firstWindow']>>,
+): Promise<void> {
+  const send = win.getByTestId('send-button');
+  await expect(send).toBeEnabled();
+  await send.click();
   await expect(win.getByTestId('task-item')).toHaveCount(1);
-  await expect(win.getByTestId('detail-status-label')).toHaveText('就绪');
 }
 
 test('pi 一轮对话：fake 脚本驱动 → 文档流渲染齐全 → awaiting_review', async () => {
@@ -88,16 +103,17 @@ test('pi 一轮对话：fake 脚本驱动 → 文档流渲染齐全 → awaiting
   const app = await launchApp({ dataDir, script });
   try {
     const win = await app.firstWindow();
-    await setupWorkspaceAndPiTask(win, wsDir, '实现一个打招呼函数');
+    await preparePiComposerTask(win, wsDir, '实现一个打招呼函数');
 
     // 工具渲染用例在放权面跑：默认「自动」档无命中规则时等价只读面，
     // bash 会被静态策略（含纵深防御）拦截——该路径由 contract 用例覆盖。
+    // ticket #36：发送即开跑——档位在首页 composer 上发送前设定（默认 auto → 点一次到放权）
     const modeChip = win.getByTestId('permission-mode-chip');
     await expect(modeChip).toHaveAttribute('data-mode', 'auto');
     await modeChip.click();
     await expect(modeChip).toHaveAttribute('data-mode', 'full');
 
-    await win.getByTestId('send-button').click();
+    await sendComposerTask(win);
 
     // 流式 markdown 渲染齐全（与其他三家同一文档流）
     await expect(win.getByTestId('msg-assistant').first()).toContainText('好的，这是', {
@@ -148,9 +164,10 @@ test('只读档：pi 启动旗标含禁写语义（fake 启动回显断言 --too
   });
   try {
     const win = await app.firstWindow();
-    await setupWorkspaceAndPiTask(win, wsDir, '只读档巡检');
+    await preparePiComposerTask(win, wsDir, '只读档巡检');
 
-    // 默认「自动」档 → 权限 chip 循环两次到「只读」（auto → full → readonly）
+    // 默认「自动」档 → 权限 chip 循环两次到「只读」（auto → full → readonly）；
+    // ticket #36：发送即开跑——档位在首页 composer 上发送前设定，启动旗标随首轮下发
     const modeChip = win.getByTestId('permission-mode-chip');
     await expect(modeChip).toHaveAttribute('data-mode', 'auto');
     await modeChip.click();
@@ -158,7 +175,7 @@ test('只读档：pi 启动旗标含禁写语义（fake 启动回显断言 --too
     await modeChip.click();
     await expect(modeChip).toHaveAttribute('data-mode', 'readonly');
 
-    await win.getByTestId('send-button').click();
+    await sendComposerTask(win);
     // 待复查 = fake 已完整跑完一轮（启动回显必然已落盘）
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
       timeout: 15_000,

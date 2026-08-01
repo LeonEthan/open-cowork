@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /**
  * 单会话对话闭环（ticket #19）端到端：
@@ -39,7 +40,7 @@ async function launchWithScript(opts: LaunchOpts): Promise<ElectronApplication> 
   });
 }
 
-/** 添加 workspace + 经 UI 建任务（返回任务标题） */
+/** 添加 workspace + 经首页 composer 建任务并开跑（ticket #36：create+start 一步到位） */
 async function setupWorkspaceAndTask(
   app: ElectronApplication,
   wsDir: string,
@@ -48,16 +49,8 @@ async function setupWorkspaceAndTask(
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
-  await win.getByTestId('task-agent-select').selectOption('claude-code');
-  await win.getByTestId('task-create-submit').click();
-  await expect(win.getByTestId('task-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
+  await createTaskViaComposer(win, { prompt, agent: 'claude-code' });
 }
 
 test('对话闭环黄金路径：流式 markdown/工具行/思考折叠 → awaiting_review → 追问一轮', async () => {
@@ -89,10 +82,7 @@ test('对话闭环黄金路径：流式 markdown/工具行/思考折叠 → awai
     await setupWorkspaceAndTask(app, wsDir, '实现一个打招呼函数');
     const win = (await app.windows())[0];
 
-    // 创建后自动选中：ready 态输入区为「开始」（首轮用创建时的需求描述）
-    await expect(win.getByTestId('detail-status-label')).toHaveText('就绪');
-    await win.getByTestId('send-button').click();
-
+    // ticket #36：composer 发送即开跑（首轮用创建时的需求描述）——直接等流式输出
     // 流式 markdown：**打招呼** → <strong>；代码块经 Shiki/纯文本兜底呈现
     await expect(win.getByTestId('msg-assistant').first()).toContainText('好的，这是', {
       timeout: 15_000,
@@ -178,8 +168,7 @@ test('取消：运行中点取消 → cancelled', async () => {
     await setupWorkspaceAndTask(app, wsDir, '写一个很长很长的故事');
     const win = (await app.windows())[0];
 
-    await win.getByTestId('send-button').click();
-    // 运行中：流式文本到达 + 取消键出现
+    // 运行中（composer 发送即开跑）：流式文本到达 + 取消键出现
     await expect(win.getByTestId('msg-assistant').first()).toContainText('开始长篇输出', {
       timeout: 15_000,
     });
@@ -211,7 +200,7 @@ test('失败：agent 异常退出 → failed 呈现原因 + 重试回 ready', as
     await setupWorkspaceAndTask(app, wsDir, '做一个会失败的任务');
     const win = (await app.windows())[0];
 
-    await win.getByTestId('send-button').click();
+    // composer 发送即开跑：fake 中途非零退出
     await expect(win.getByTestId('msg-assistant').first()).toContainText('跑到一半', {
       timeout: 15_000,
     });

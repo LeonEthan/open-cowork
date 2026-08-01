@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import { addWorkspaceViaBridge, createTaskViaComposer } from './helpers';
 
 /** Node ABI 的 better-sqlite3 副本（vitest alias 同源；e2e 跑在 Node 上）——#31 规则种库用 */
 const nodeRequire = createRequire(join(process.cwd(), 'e2e', 'approval-flow.spec.ts'));
@@ -47,7 +48,7 @@ async function launchWithScript(opts: LaunchOpts): Promise<ElectronApplication> 
   });
 }
 
-/** 添加 workspace + 经 UI 建任务（与 agent-conversation.spec.ts 同辅助，防耦复制） */
+/** 添加 workspace + 经首页 composer 建任务并开跑（ticket #36：create+start 一步到位） */
 async function setupWorkspaceAndTask(
   app: ElectronApplication,
   wsDir: string,
@@ -56,16 +57,8 @@ async function setupWorkspaceAndTask(
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   await expect(win.getByTestId('task-sidebar')).toBeVisible();
-  await win.evaluate(async (p) => {
-    await window.openCowork?.workspaces.addByPath(p);
-  }, wsDir);
-  await win.reload();
-  await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-  await win.getByTestId('new-task-toggle').click();
-  await win.getByTestId('task-prompt-input').fill(prompt);
-  await win.getByTestId('task-agent-select').selectOption('claude-code');
-  await win.getByTestId('task-create-submit').click();
-  await expect(win.getByTestId('task-item')).toHaveCount(1);
+  await addWorkspaceViaBridge(win, wsDir);
+  await createTaskViaComposer(win, { prompt, agent: 'claude-code' });
 }
 
 test('⌘1 批准一次：托盘出现 → awaiting_approval → 批准后工具继续 → 待复查', async () => {
@@ -100,8 +93,7 @@ test('⌘1 批准一次：托盘出现 → awaiting_approval → 批准后工具
     await setupWorkspaceAndTask(app, wsDir, '帮我给项目装依赖');
     const win = (await app.windows())[0];
 
-    await win.getByTestId('send-button').click();
-
+    // composer 发送即开跑（ticket #36）——直接等审批请求
     // 托盘出现：逐条聚焦当前请求（工具/目标/理由），排队预览为空
     const tray = win.getByTestId('approval-tray');
     await expect(tray).toBeVisible({ timeout: 15_000 });
@@ -190,8 +182,7 @@ test('两条并发审批：排队预览可见 → 逐条 ⌘1 处理不遗漏', 
     await setupWorkspaceAndTask(app, wsDir, '装依赖并创建配置文件');
     const win = (await app.windows())[0];
 
-    await win.getByTestId('send-button').click();
-
+    // composer 发送即开跑（ticket #36）
     // 两条并发：计数 2，当前聚焦首条（到达序），排队预览可扫读第二条
     const tray = win.getByTestId('approval-tray');
     await expect(tray).toBeVisible({ timeout: 15_000 });
@@ -249,8 +240,7 @@ test('⌘3 附理由拒绝：理由随 deny 回传 agent（wire + JSONL 双断�
     await setupWorkspaceAndTask(app, wsDir, '清理构建产物');
     const win = (await app.windows())[0];
 
-    await win.getByTestId('send-button').click();
-
+    // composer 发送即开跑（ticket #36）
     const tray = win.getByTestId('approval-tray');
     await expect(tray).toBeVisible({ timeout: 15_000 });
 
@@ -325,9 +315,11 @@ test('#31：规则命中首行也不自动放行多行命令——托盘出现 �
 
   const app = await launchWithScript({ dataDir, script });
   try {
-    await setupWorkspaceAndTask(app, wsDir, '跑一段多行命令');
-    const win = (await app.windows())[0];
-
+    // ticket #36：composer 发送即 create+start——规则必须在开跑前种入，
+    // 否则 fake 的 permission_request 会抢在种规则之前求裁决（回归语义丢失）
+    const win0 = await app.firstWindow();
+    await win0.waitForLoadState('domcontentloaded');
+    await expect(win0.getByTestId('task-sidebar')).toBeVisible();
     // DB 直接种规则「Bash: npm *」（不走 UI；策略引擎逐 ask 现查规则表，此刻种入即生效）
     {
       const db = new Database(join(dataDir, 'open-cowork.db'));
@@ -337,7 +329,8 @@ test('#31：规则命中首行也不自动放行多行命令——托盘出现 �
       db.close();
     }
 
-    await win.getByTestId('send-button').click();
+    await setupWorkspaceAndTask(app, wsDir, '跑一段多行命令');
+    const win = (await app.windows())[0];
 
     // 修复核心：首行命中规则也不得 auto_allow——第二行未命中，托盘必须出现（逐条审批）
     const tray = win.getByTestId('approval-tray');

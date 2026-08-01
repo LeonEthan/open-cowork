@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+import {
+  addWorkspaceViaBridge,
+  createTaskViaComposer,
+  focusHomeComposer,
+  openAgentModelPicker,
+} from './helpers';
 
 /**
  * Codex + opencode driver（ticket #22）端到端：
@@ -55,12 +61,10 @@ test('会话 picker 按探测结果列出四家：env 覆盖可选，未安装�
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
     await expect(win.getByTestId('task-sidebar')).toBeVisible();
-    await win.evaluate(async (p) => {
-      await window.openCowork?.workspaces.addByPath(p);
-    }, wsDir);
-    await win.reload();
-    await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-    await win.getByTestId('new-task-toggle').click();
+    await addWorkspaceViaBridge(win, wsDir);
+    // ticket #36：picker 收进首页 composer 动作行的合并弹出层——先聚焦 composer 再开弹出层
+    await focusHomeComposer(win);
+    await openAgentModelPicker(win);
 
     const select = win.getByTestId('task-agent-select');
     // 探测完成前 select 禁用（「探测中…」）；完成后四家列出
@@ -115,20 +119,9 @@ test('codex 一轮对话：fake 脚本驱动 → 文档流渲染齐全 → await
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
     await expect(win.getByTestId('task-sidebar')).toBeVisible();
-    await win.evaluate(async (p) => {
-      await window.openCowork?.workspaces.addByPath(p);
-    }, wsDir);
-    await win.reload();
-    await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-    await win.getByTestId('new-task-toggle').click();
-    await win.getByTestId('task-prompt-input').fill('实现一个打招呼函数');
-    await win.getByTestId('task-agent-select').selectOption('codex');
-    await win.getByTestId('task-create-submit').click();
-    await expect(win.getByTestId('task-item')).toHaveCount(1);
-
-    // 创建后自动选中：ready 态「开始」首轮
-    await expect(win.getByTestId('detail-status-label')).toHaveText('就绪');
-    await win.getByTestId('send-button').click();
+    await addWorkspaceViaBridge(win, wsDir);
+    // ticket #36：首页 composer 建任务即开跑（create+start 一步到位）
+    await createTaskViaComposer(win, { prompt: '实现一个打招呼函数', agent: 'codex' });
 
     // 流式 markdown 渲染齐全（与 claude 路径同一文档流）
     await expect(win.getByTestId('msg-assistant').first()).toContainText('好的，这是', {
