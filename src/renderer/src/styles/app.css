@@ -250,39 +250,7 @@
   white-space: nowrap;
 }
 
-/* 新建任务表单（§4 输入区精神：边框分层、聚焦仅边框变深、无光晕） */
-.task-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-.task-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.task-form .field-label {
-  font-size: 12px;
-  color: var(--ink-2);
-}
-.task-form textarea,
-.task-form select {
-  width: 100%;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: var(--font-size-ui);
-  color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  resize: vertical;
-}
-.task-form textarea:focus,
-.task-form select:focus {
-  outline: none;
-  border-color: var(--ink-3);
-}
+/* 任务表单动作行（ticket #37 终审：.task-form 容器规则随 #36 表单退场删除，本块独立存活） */
 .task-form-actions {
   display: flex;
   gap: 8px;
@@ -305,15 +273,6 @@ button:disabled {
   margin: 0 0 24px;
   font-size: 14px;
   color: var(--ink);
-}
-.task-prompt {
-  margin: 0 0 24px;
-  padding: 12px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  font-size: 14px;
-  white-space: pre-wrap;
 }
 
 /* ── ticket #28: 内置终端 tab ─────────────────────────── */
@@ -452,6 +411,13 @@ button:disabled {
   background: var(--accent);
   animation: stream-blink 1s steps(1) infinite;
 }
+/* 流式态（ticket #37 终审）：.md 容器与尾随段落 inline 化，光标附在流式文本
+   行尾（插入点语义）；流结束类即移除，块级排版复原。仅段落 inline 化——
+   列表/代码块结尾仍落新行，不破坏其块级布局 */
+.msg-assistant.streaming .md,
+.msg-assistant.streaming .md > p:last-child {
+  display: inline;
+}
 @keyframes stream-blink {
   0%,
   50% {
@@ -571,10 +537,6 @@ button:disabled {
 .composer-box:focus-within {
   border-color: var(--ink-3);
 }
-.composer-chips {
-  display: flex;
-  gap: 6px;
-}
 .chip {
   display: inline-flex;
   align-items: center;
@@ -644,6 +606,17 @@ button:disabled {
 .content-controls .icon-btn {
   -webkit-app-region: no-drag;
 }
+/* ticket #37 终审：侧栏折叠开关的 pressed 态回归普通外观——accent 为 §2 焦点/链接
+   专用信号，永久态占用会与 :focus-visible 焦点环（base.css）不可区分；
+   侧栏开合本身即是状态反馈，无需 accent 镜像 */
+.content-controls .icon-btn[aria-pressed='true'] {
+  color: var(--ink-2);
+  border-color: var(--border);
+}
+.content-controls .icon-btn[aria-pressed='true']:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
 /* 侧栏折叠时内容区顶到窗口左缘：开关行右移让位红绿灯 */
 .content.sidebar-collapsed .content-controls {
   padding-left: 88px;
@@ -697,8 +670,9 @@ button:disabled {
 
 /* ── ticket #35 ─────────────────────────────────────────────
    侧栏 IA 重构（§1.3）：功能行 + workspace 分组树。
-   行选中/hover 一律 --bg-pill 系（§2 派生 token、§4 侧栏行约定：无描边，
-   hover 取同系减半浓度 = bg-pill 50% 混入 bg-soft）。 */
+   行选中/hover：workspace 行/任务行一律 --bg-pill 系（§2 派生 token、§4 侧栏行约定：无描边，
+   hover 取同系减半浓度 = bg-pill 50% 混入 bg-soft）；
+   功能行 hover 用 --ink-3 浓度系派生（--bg-pill 不覆盖功能行，ticket #37 终审）。 */
 
 /* 功能行：新建任务 icon + 文字行（无多余分组装饰） */
 .tree-section {
@@ -717,7 +691,9 @@ button:disabled {
   text-align: left;
 }
 .tree-action:hover {
-  background: color-mix(in srgb, var(--bg-pill) 50%, var(--bg-soft));
+  /* 功能行 hover 底：--ink-3 浓度系派生（§2：--bg-pill 仅限 workspace 行/任务行，
+     ticket #37 终审自 bg-pill 系收回） */
+  background: color-mix(in srgb, var(--ink-3) 14%, var(--bg-soft));
 }
 .tree-action-icon {
   flex: none;
@@ -757,7 +733,7 @@ button:disabled {
 .ws-chevron {
   flex: none;
   width: 10px;
-  font-size: 10px;
+  font-size: 10.5px; /* §3 徽标档下限（ticket #37 终审：10px 跌出具名档位） */
   color: var(--ink-2);
 }
 .ws-icon {
@@ -833,16 +809,25 @@ button:disabled {
   flex-direction: column;
 }
 
-/* 底部 dock：sticky bottom 悬浮于文档流之上；底色遮罩防滚动文字从缝隙透出 */
+/* 底部 dock：sticky bottom 悬浮于文档流之上；底色遮罩防滚动文字从缝隙透出。
+   ticket #37 终审：遮罩全宽（内容栏内边距盒），860px 会话行不再从卡片两侧透出；
+   内层托盘/composer 仍限 760px 居中（§3 composer 宽度独立约定）。 */
 .composer-dock {
   margin-top: auto;
-  margin-inline: auto;
   position: sticky;
   bottom: 16px;
   z-index: 15;
-  width: min(760px, 100%);
+  width: 100%;
   padding-top: 8px;
   background: var(--bg);
+}
+.composer-dock > * {
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+/* 吸底补偿：scrollIntoView 时最新条目完整落在 dock 之上（ticket #37 终审） */
+.conversation-end {
+  scroll-margin-bottom: 220px;
 }
 
 /* composer 悬浮卡片：16px 圆角档（§3：仅本卡片与 starter 卡片可用；

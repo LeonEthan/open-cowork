@@ -39,7 +39,7 @@
 ### 4.1 单会话对话闭环
 
 - 文档式会话流：用户消息、agent 回复（markdown 流式渲染）、工具调用极简行、思考过程折叠区。
-- 输入区（composer）：底部居中悬浮卡片，三行结构 = 上下文行（workspace/agent/model chip）/ 输入 / 动作行（附件、权限档位 chip、context 水位环、发送键）（DESIGN.md §3/§4）。
+- 输入区（composer）：底部居中悬浮卡片，三行结构 = 上下文行（workspace/agent/model chip）/ 输入 / 动作行（权限档位 chip、context 水位环、发送键）（DESIGN.md §3/§4）。
 - 任务六态状态机：`ready → running ⇄ awaiting_approval → awaiting_review → done`（+`failed`/`cancelled`）。
 - 内置终端 tab（node-pty + xterm.js）。
 

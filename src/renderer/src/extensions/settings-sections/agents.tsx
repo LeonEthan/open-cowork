@@ -34,7 +34,11 @@ function StatusBadge(props: { agent: AgentEnvironmentInfo }): React.JSX.Element 
     );
   }
   return (
-    <span className="agent-badge ok" data-testid={`agent-status-${a.id}`}>
+    <span
+      className="agent-badge ok"
+      data-testid={`agent-status-${a.id}`}
+      title={a.version ?? undefined}
+    >
       已安装{a.version ? ` · ${a.version}` : ''}
     </span>
   );
@@ -373,7 +377,11 @@ function CustomAgentCard(props: { agent: CustomAgentInfo }): React.JSX.Element {
         <span className="agent-name">{a.name}</span>
         <span className="agent-cap">自定义 ACP</span>
         {a.installed ? (
-          <span className="agent-badge ok" data-testid={`custom-agent-status-${a.id}`}>
+          <span
+            className="agent-badge ok"
+            data-testid={`custom-agent-status-${a.id}`}
+            title={a.version ?? undefined}
+          >
             已安装{a.version ? ` · ${a.version}` : ''}
           </span>
         ) : (

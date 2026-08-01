@@ -321,7 +321,10 @@ async function probeVersion(
 ): Promise<string | null> {
   const run = deps.run ?? defaultRun;
   const r = await run(cmd, [...args, '--version']);
-  const firstLine = r.stdout.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? null;
+  const raw = r.stdout.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? null;
+  // ticket #37 终审：版本串上限 120 字符——自定义 ACP agent 可注册任意命令，
+  // --version 首行无长度保证，防超长串撑爆设置页徽标（完整首行仍入探测日志）
+  const firstLine = raw && raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
   if (r.error) {
     log(`--version 探测失败: ${r.error}${r.stderr.trim() ? `（stderr: ${r.stderr.trim().slice(0, 200)}）` : ''}`);
     return null;
@@ -330,7 +333,7 @@ async function probeVersion(
     log(`--version 退出码 ${r.code ?? 'null'}${r.stderr.trim() ? `（stderr: ${r.stderr.trim().slice(0, 200)}）` : ''}`);
     return firstLine; // 部分 CLI 非零退出但仍打印版本——尽量保留
   }
-  log(`--version → ${firstLine ?? '(无输出)'}`);
+  log(`--version → ${raw ?? '(无输出)'}`);
   return firstLine;
 }
 
