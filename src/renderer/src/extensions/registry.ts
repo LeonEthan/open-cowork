@@ -4,7 +4,8 @@ import type { ComponentType } from 'react';
  * renderer 侧扩展点统一注册表：新增文件即注册、零编辑共享文件。
  *
  * 三个扩展面（后续票据在并行 worktree 中各自新增文件，互不冲突）：
- *   extensions/inspector-tabs/     检查栏 tab（DESIGN.md §1：变更/文件/终端等）
+ *   extensions/inspector-tabs/     检查栏 tab（DESIGN.md §1：变更/终端等；
+ *                                  文件复查并入变更 tab，不单设文件 tab）
  *   extensions/settings-sections/  设置页区块
  *   extensions/sidebar-sections/   任务侧栏区块
  *
@@ -19,7 +20,7 @@ import type { ComponentType } from 'react';
 
 export interface InspectorTabDef {
   id: string;
-  /** tab 栏显示的短标题（如「变更」「文件」「终端」） */
+  /** tab 栏显示的短标题（如「变更」「终端」） */
   title: string;
   order: number;
   component: ComponentType;
