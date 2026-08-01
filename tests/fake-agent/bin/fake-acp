@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+/**
+ * fake ACP agent CLI 包装（ticket #26）：acp driver 以自定义注册命令的方式 spawn 本文件，
+ * 转发到 fake agent harness 并锁定 acp-jsonrpc wire 格式。
+ * （cli.mjs 只认 --format 旗标；真实 ACP agent 没有此旗标，故用本包装隔离。）
+ */
+import { fileURLToPath } from 'node:url';
+
+process.argv.splice(2, 0, '--format', 'acp-jsonrpc');
+await import(fileURLToPath(new URL('../cli.mjs', import.meta.url)));

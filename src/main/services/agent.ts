@@ -5,6 +5,9 @@ import * as workspaceRepo from '../db/workspaceRepo';
 import { prepareProviderEnv } from '../providers/runtime';
 import { prepareTaskCapture } from '../changes/capture';
 import type { ServiceContext } from './index';
+// ticket #26（additive 独立行）：自定义 agent 注册表 + 内置 agent 路径修复解析
+import * as customAgentRepo from '../db/customAgentRepo';
+import { resolveLaunchExecutablePath } from './agentDetect';
 
 /**
  * agent 服务（ticket #19）：renderer 发起的会话控制（start/followup/cancel）
@@ -52,6 +55,32 @@ export default function register(ctx: ServiceContext): void {
     }
     const cwd = resolveCwd(taskId);
 
+    // ── ticket #26（additive）：agent 启动解析，必须先于状态迁移（失败任务停留 ready）──
+    // 内置四家：路径修复的持久化 override 随指令下发（env 覆盖生效时不下发，
+    // 保持 driver 的 OPEN_COWORK_*_CLI 默认解析链）；自定义 ACP：注册 spec 随附
+    // （utility 无 DB 访问），行已删 → 明确报错。
+    let customAgent:
+      | { id: string; name: string; command: string; args: string[]; env?: Record<string, string> }
+      | undefined;
+    let executablePath: string | null = null;
+    if (task.agent_type.startsWith('custom:')) {
+      const row = customAgentRepo.getById(ctx.db, task.agent_type.slice('custom:'.length));
+      if (!row) {
+        throw new Error('该任务引用的自定义 agent 已在设置中删除——请新建任务选择其他 agent');
+      }
+      const env = customAgentRepo.parseEnv(row);
+      customAgent = {
+        id: row.id,
+        name: row.name,
+        command: row.command,
+        args: customAgentRepo.parseArgs(row),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
+      };
+    } else {
+      executablePath = resolveLaunchExecutablePath(ctx.dataDir, task.agent_type);
+    }
+    // ── ticket #26 end ──────────────────────────────────────────────────────
+
     // #21：provider 注入（密钥 env + per-workspace 生成配置指向 env）。
     // 在状态迁移前解析——provider 缺失/密钥不可用时启动失败、任务停留 ready。
     const providerEnv = prepareProviderEnv({ db: ctx.db, dataDir: ctx.dataDir, task });
@@ -90,6 +119,9 @@ export default function register(ctx: ServiceContext): void {
               alwaysAllowRules: approvalRepo.listRules(ctx.db),
             }
           : {}),
+        // ticket #26（additive）：路径修复覆盖 / 自定义 ACP spec（见上方解析块）
+        ...(executablePath ? { executablePath } : {}),
+        ...(customAgent ? { customAgent } : {}),
       },
     });
     broadcast();

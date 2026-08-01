@@ -55,6 +55,7 @@ import claudeStreamJson from './formats/claude-stream-json.mjs';
 import codexJsonrpc from './formats/codex-jsonrpc.mjs'; // ticket #22
 import opencodeSse from './formats/opencode-sse.mjs'; // ticket #22
 import piRpc from './formats/pi-rpc.mjs'; // ticket #23
+import acpJsonrpc from './formats/acp-jsonrpc.mjs'; // ticket #26
 import { runScript } from './runner.mjs';
 
 const FORMATS = {
@@ -62,6 +63,7 @@ const FORMATS = {
   'codex-jsonrpc': codexJsonrpc, // ticket #22
   'opencode-sse': opencodeSse, // ticket #22
   'pi-rpc': piRpc, // ticket #23
+  'acp-jsonrpc': acpJsonrpc, // ticket #26
 };
 
 async function main() {

@@ -13,12 +13,18 @@ export function Sidebar(): React.JSX.Element {
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`} data-testid="task-sidebar" aria-hidden={collapsed}>
       <div className="pane-body">
-        {sidebarSections.map((s) => (
-          <section key={s.id} className="settings-section" data-section-id={s.id}>
-            <h2 className="pane-title">{s.title}</h2>
-            <s.component />
-          </section>
-        ))}
+        {sidebarSections.map((s) =>
+          // ticket #26（additive）：空标题区块裸渲染（agent 横幅：不健康才有内容，
+          // 健康时连区块壳都不留）；有标题区块维持原壳
+          s.title === '' ? (
+            <s.component key={s.id} />
+          ) : (
+            <section key={s.id} className="settings-section" data-section-id={s.id}>
+              <h2 className="pane-title">{s.title}</h2>
+              <s.component />
+            </section>
+          ),
+        )}
         {sidebarSections.length === 0 && <div className="empty-state">（无已注册区块）</div>}
       </div>
       <div className="pane-footer">

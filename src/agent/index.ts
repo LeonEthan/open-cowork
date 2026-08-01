@@ -1,6 +1,9 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { getDriverDefinition, listDrivers } from './drivers/registry';
+// ticket #26（additive 独立行，并行票据零冲突合并约定）：自定义 ACP agent 动态实例
+import { createCustomDriverDefinition } from './drivers/registry';
+import type { CustomAgentSpec } from './drivers/registry';
 import type {
   AgentEvent,
   AlwaysAllowRule,
@@ -210,6 +213,11 @@ interface StartCommand {
    * 原生 driver 的规则口径仍收敛在 main 策略引擎（#20 单一口径，不经此路）。
    */
   alwaysAllowRules?: AlwaysAllowRule[];
+  // ── ticket #26（additive）──
+  /** 内置 agent 的可执行路径覆盖（main 侧路径修复持久化的解析结果） */
+  executablePath?: string | null;
+  /** 自定义 ACP agent 注册 spec（agentType='custom:<id>' 时由 main 从 DB 解析随附） */
+  customAgent?: CustomAgentSpec;
 }
 
 interface FollowupCommand {
@@ -238,7 +246,11 @@ function handleStart(cmd: StartCommand): void {
     console.warn(`[agent] 任务 ${cmd.taskId} 已有活跃会话，忽略重复 start`);
     return;
   }
-  const def = getDriverDefinition(cmd.agentType);
+  // ── ticket #26（additive）：自定义 ACP agent 经注册 spec 动态实例化（utility 无 DB，
+  // spec 由 main 随 start 指令传入）；内置四家维持注册表 glob 查找 ──
+  const def = cmd.customAgent
+    ? createCustomDriverDefinition(cmd.customAgent)
+    : getDriverDefinition(cmd.agentType);
   const entry: SessionEntry = {
     taskId: cmd.taskId,
     sessionId: null,
@@ -274,6 +286,8 @@ function handleStart(cmd: StartCommand): void {
     ...(typeof cmd.permissionTimeoutMs === 'number'
       ? { permissionTimeoutMs: cmd.permissionTimeoutMs }
       : {}),
+    // ticket #26（additive）：main 侧路径修复解析出的可执行覆盖（无则 driver 默认解析链）
+    ...(typeof cmd.executablePath === 'string' ? { executablePath: cmd.executablePath } : {}),
     // executablePath 缺省——claude driver 读 OPEN_COWORK_CLAUDE_CLI（e2e 覆盖点）
     // #23：降级 driver（pi）静态策略输入——规则快照进既有 alwaysAllowRules 字段；
     // permissionMode 无对应字段（events.ts 冻结），以结构化附加属性透传，

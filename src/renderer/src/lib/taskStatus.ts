@@ -29,6 +29,18 @@ export const AGENT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'pi', label: 'pi' },
 ];
 
+// ── ticket #26（additive）：自定义 agent 显示名快照 ─────────────────────
+// task.agent_type = 'custom:<dbId>'——显示名存 main 侧 DB，本模块是纯函数库无法
+// 异步查询；stores/agentEnvironment.ts 在每次探测同步后注入最新快照。
+let customAgentNames: ReadonlyMap<string, string> = new Map();
+
+export function setCustomAgentNameSnapshot(names: ReadonlyMap<string, string>): void {
+  customAgentNames = names;
+}
+
 export function agentLabel(agentType: string): string {
+  if (agentType.startsWith('custom:')) {
+    return customAgentNames.get(agentType) ?? '自定义 agent';
+  }
   return AGENT_OPTIONS.find((a) => a.value === agentType)?.label ?? agentType;
 }
