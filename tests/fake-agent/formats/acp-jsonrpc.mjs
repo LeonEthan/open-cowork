@@ -265,7 +265,18 @@ export default function createAcpJsonrpcEmitter(io) {
             used: input + output,
             size: 200000,
             // 非标准扩展：input/output 分账（真实 ACP 只有 used/size；driver 侧宽容读取）
-            _meta: { inputTokens: input, outputTokens: output },
+            // #27：缓存分账与轮次 model 同样经 _meta 透传（与 claude/pi 格式对齐）
+            _meta: {
+              inputTokens: input,
+              outputTokens: output,
+              ...(typeof event.usage?.cacheReadTokens === 'number'
+                ? { cacheReadTokens: event.usage.cacheReadTokens }
+                : {}),
+              ...(typeof event.usage?.cacheWriteTokens === 'number'
+                ? { cacheWriteTokens: event.usage.cacheWriteTokens }
+                : {}),
+              ...(typeof event.usage?.model === 'string' ? { model: event.usage.model } : {}),
+            },
           });
           respondPrompt({ stopReason: status === 'completed' ? 'end_turn' : 'refusal' });
           return;

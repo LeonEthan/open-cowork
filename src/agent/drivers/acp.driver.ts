@@ -142,6 +142,11 @@ function mapToolStatus(status: unknown): NormalizedToolCall['status'] {
 interface TurnUsage {
   inputTokens: number;
   outputTokens: number;
+  /** 非标准 _meta 扩展（fake harness 与部分实现提供；标准 ACP 只有 used/size） */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  /** 非标准 _meta 扩展；缺省回落会话 model */
+  model?: string | null;
   raw: unknown;
 }
 
@@ -419,7 +424,9 @@ class AcpDriverSession implements DriverSession {
       usage: {
         inputTokens: u?.inputTokens ?? 0,
         outputTokens: u?.outputTokens ?? 0,
-        model: s.model,
+        cacheReadTokens: u?.cacheReadTokens ?? 0,
+        cacheWriteTokens: u?.cacheWriteTokens ?? 0,
+        model: u?.model ?? s.model,
         raw: u?.raw ?? null,
       },
     });
@@ -480,6 +487,14 @@ class AcpDriverSession implements DriverSession {
                 ? update.used
                 : 0,
           outputTokens: typeof meta.outputTokens === 'number' ? meta.outputTokens : 0,
+          // 非标准扩展续：缓存分账与轮次 model（缺省不落字段，emit 时回落 0 / 会话 model）
+          ...(typeof meta.cacheReadTokens === 'number'
+            ? { cacheReadTokens: meta.cacheReadTokens }
+            : {}),
+          ...(typeof meta.cacheWriteTokens === 'number'
+            ? { cacheWriteTokens: meta.cacheWriteTokens }
+            : {}),
+          ...(typeof meta.model === 'string' ? { model: meta.model } : {}),
           raw: update,
         };
         break;
