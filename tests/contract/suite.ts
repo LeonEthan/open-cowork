@@ -2,7 +2,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { AgentDriver, AgentEvent, DriverStartParams, PermissionDecision, PermissionRequestPayload } from '../../src/agent/events';
+import type { AgentDriver, AgentEvent, DriverSession, DriverStartParams, PermissionDecision, PermissionRequestPayload } from '../../src/agent/events';
+import { pidAlive } from '../../src/agent/processRegistry';
 
 /**
  * 表驱动 contract 测试套件（ticket #19，测试接缝 1 的消费端）。
@@ -36,6 +37,13 @@ export interface DriverHarnessEntry {
    * 静态策略覆盖在各家的 contract 文件内（翻译纯函数 + 启动旗标断言）。
    */
   approval?: 'native' | 'degraded';
+  /**
+   * ticket #30（additive）：driver 是否暴露子进程 pid（DriverSession.pid）。
+   * 缺省 true——自 spawn 子进程的 driver（codex/opencode/pi/acp，fake agent
+   * 同样是被 spawn 的子进程）一律应暴露；false 仅 claude（Agent SDK 托管
+   * 子进程，Query 公开接口无 pid，票面豁免，见 claude.driver.ts 注释）。
+   */
+  supportsPid?: boolean;
 }
 
 export interface CollectedEvents {
@@ -61,21 +69,15 @@ export async function runSession(
     permissionHandler?: (req: PermissionRequestPayload) => Promise<PermissionDecision>;
     /** ticket #20：审批等待超时（毫秒，超时=deny fail-closed）；缺省 driver 默认 120s */
     permissionTimeoutMs?: number;
-    afterStart?: (session: {
-      cancel: () => Promise<void>;
-      sendFollowup: (text: string) => Promise<void>;
-    }) => void;
+    afterStart?: (session: DriverSession) => void;
     /** 每个归一事件到达时的钩子（可驱动追问/取消，免去裸 sleep） */
-    onEvent?: (
-      event: AgentEvent,
-      session: { cancel: () => Promise<void>; sendFollowup: (text: string) => Promise<void> },
-    ) => void;
+    onEvent?: (event: AgentEvent, session: DriverSession) => void;
     timeoutMs?: number;
   } = {},
 ): Promise<{ collected: CollectedEvents; end: { reason: string; error?: string } }> {
   const events: AgentEvent[] = [];
   const driver = entry.create();
-  const sessionRef: { current: Parameters<NonNullable<typeof opts.onEvent>>[1] | null } = {
+  const sessionRef: { current: DriverSession | null } = {
     current: null,
   };
   const session = driver.start(
@@ -134,6 +136,32 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
       const started = collected.byType('session_started')[0];
       expect(started.sessionId).toBeTruthy();
     });
+
+    // ── ticket #30（additive）：DriverSession.pid 暴露（进程注册表二级清扫的事实源）──
+    // 一条用例覆盖所有实现 pid 的 driver；claude 豁免（SDK 托管子进程，supportsPid=false）
+    if (entry.supportsPid !== false) {
+      it('pid 暴露：session.pid 为正整数且进程存活（二级清扫登记用）', async () => {
+        const script = writeScript([
+          { action: 'expect_stdin' },
+          { action: 'emit', event: { kind: 'text', text: 'pid 探测' } },
+          { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+          { action: 'exit', code: 0 },
+        ]);
+        let seenPid: number | undefined;
+        let aliveAtStart = false;
+        const { end } = await runSession(entry, script, {
+          afterStart: (session) => {
+            seenPid = session.pid;
+            aliveAtStart = typeof seenPid === 'number' && pidAlive(seenPid);
+          },
+        });
+        expect(end.reason).toBe('completed');
+        expect(typeof seenPid).toBe('number');
+        expect(Number.isInteger(seenPid)).toBe(true);
+        expect(seenPid!).toBeGreaterThan(0);
+        expect(aliveAtStart).toBe(true);
+      });
+    }
 
     it('事件归一：text/thinking/tool_call/usage 全类覆盖', async () => {
       const script = writeScript([

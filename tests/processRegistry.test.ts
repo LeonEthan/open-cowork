@@ -102,6 +102,47 @@ describe('ProcessRegistry 二级清理（sweepStale）', () => {
       });
     });
   });
+
+  /**
+   * ticket #30 崩溃链实证（第二级清理修复的端到端）：
+   * register 带 pids → persist 的状态文件含 pid → 模拟崩溃（不调 unregister/killAll，
+   * 直接弃 registry——状态文件保留 pid 登记）→ 新实例 sweepStale 把登记的 pid 清掉。
+   * 真实 spawn sleep 30 子进程实证；finally 兜底保证不泄漏测试进程。
+   */
+  it('崩溃链：register(pids) → 文件含 pid → 弃 registry → sweepStale 杀活进程并清空', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oc-reg-'));
+    const file = join(dir, 'agent-processes.json');
+    const { spawn } = require('node:child_process') as typeof import('node:child_process');
+    const child = spawn('sleep', ['30']);
+    expect(child.pid).toBeGreaterThan(0);
+    const livePid = child.pid!;
+    try {
+      // 运行态登记：pids 随 register 落盘（修复前 register 从不传 pids → 文件恒空 → sweep 恒 no-op）
+      const reg = new ProcessRegistry(file);
+      reg.register('task-crash', { kill: () => {}, pids: [livePid] });
+      expect(reg.registeredPids()).toEqual([livePid]);
+      const entries = JSON.parse(readFileSync(file, 'utf8')) as { pid: number; taskId: string }[];
+      expect(entries).toEqual([{ pid: livePid, taskId: 'task-crash', at: expect.any(Number) }]);
+
+      // 模拟崩溃：弃 registry（不 unregister 不 killAll）→ 状态文件保留登记
+      // 先挂 exit 监听再 sweep，防同 tick 竞态漏收
+      const exited = new Promise<void>((resolve) => child.on('exit', () => resolve()));
+      // 下次启动：新实例读状态文件做二级清扫
+      const next = new ProcessRegistry(file);
+      expect(next.sweepStale()).toBe(1);
+      await exited;
+      expect(pidAlive(livePid)).toBe(false);
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([]);
+    } finally {
+      if (pidAlive(livePid)) {
+        try {
+          process.kill(livePid, 'SIGKILL');
+        } catch {
+          // 已退出
+        }
+      }
+    }
+  });
 });
 
 describe('pidAlive', () => {

@@ -15,6 +15,10 @@ const entry: DriverHarnessEntry = {
     executablePath: fileURLToPath(new URL('../fake-agent/cli.mjs', import.meta.url)),
     env: { FAKE_AGENT_SCRIPT: scriptPath },
   }),
+  // ticket #30：claude 豁免 pid 断言——Agent SDK 的 query()/Query 公开接口不暴露
+  // 子进程 pid（子进程由 SDK 托管 spawn）；不改 SDK、不 monkey-patch（票面约束），
+  // 崩溃孤儿风险由 SDK 自身进程关系承担（见 claude.driver.ts 注释与修复报告）。
+  supportsPid: false,
 };
 
 defineContractSuite(entry);
