@@ -1,5 +1,6 @@
 import type { AlwaysAllowRule, PermissionRequestPayload } from '../../agent/events';
 import { matchesAlwaysAllowRule } from '../../agent/events';
+import { ruleMatchTarget } from '../../agent/commandTarget';
 import type { PermissionMode } from '../db/entities';
 
 /**
@@ -14,7 +15,10 @@ import type { PermissionMode } from '../db/entities';
  * - full 完全放权：一律 auto_allow（permission 请求不再打扰用户）。
  *
  * 规则匹配复用 events.ts 的 matchesAlwaysAllowRule（全适配层唯一权威匹配器）。
- * 工具分类保守化（fail-closed 精神）：白名单外的工具一律视为写/命令类。
+ * ticket #31：匹配文本为完整命令（ruleMatchTarget 从 input 提取）——request.target
+ * 是首行+截断的展示投影，永不进匹配链；多行命令逐行全命中才放行，
+ * 任一行未命中 → ask（非 deny）。工具分类保守化（fail-closed 精神）：
+ * 白名单外的工具一律视为写/命令类。
  */
 
 /** 裁决结果 */
@@ -41,7 +45,8 @@ export function isReadOnlyTool(toolName: string): boolean {
 export function decidePermission(
   mode: PermissionMode,
   rules: readonly AlwaysAllowRule[],
-  request: Pick<PermissionRequestPayload, 'toolName' | 'target'>,
+  // ticket #31：input 携完整工具入参（匹配文本来源）；缺席的旧调用形状回退 target 匹配
+  request: Pick<PermissionRequestPayload, 'toolName' | 'target'> & { input?: unknown },
 ): PolicyVerdict {
   if (mode === 'full') return { kind: 'auto_allow', rulePattern: null };
   if (mode === 'readonly') {
@@ -52,7 +57,10 @@ export function decidePermission(
     };
   }
   // auto：规则命中放行，未命中逐条审批
-  const hit = rules.find((r) => matchesAlwaysAllowRule(r, request.toolName, request.target));
+  // ticket #31：完整命令进匹配链——target 是首行+截断的展示投影，不作匹配依据；
+  // 多行命令逐行全命中才算命中（任一行未命中 → ask，语义见 events.ts matchesAlwaysAllowRule）
+  const matchTarget = ruleMatchTarget(request.toolName, request.input, request.target);
+  const hit = rules.find((r) => matchesAlwaysAllowRule(r, request.toolName, matchTarget));
   if (hit) return { kind: 'auto_allow', rulePattern: `${hit.tool}: ${hit.targetPattern}` };
   return { kind: 'ask' };
 }

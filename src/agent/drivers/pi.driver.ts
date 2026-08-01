@@ -115,6 +115,10 @@ export interface PiStaticPolicy {
  * 语义对齐 #20 decidePermission 的三档裁决，差异只在表达力：
  * pi 启动旗标是工具粒度，规则的目标模式（如 `Bash: npm *`）无法静态表达——
  * 自动档下有任一规则命中的工具整体进允许清单（降级固有近似，见文件头注释）。
+ *
+ * ticket #31 核实：本翻译**不消费** target 投影也不做文本匹配（只读 rule.tool），
+ * #31 的有损投影缺陷不涉及 pi 路径；pi 侧授权粒度由 pi 自身 --tools 配置语义
+ * + 运行期 guardStaticPolicy 纵深防御决定。
  */
 export function translatePiStaticPolicy(
   mode: PiPermissionMode,
