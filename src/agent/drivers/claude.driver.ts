@@ -289,6 +289,11 @@ function filterSessionPermissionUpdates(suggestions: unknown[]): unknown[] {
 
 class ClaudeDriverSession implements DriverSession {
   readonly done: Promise<{ reason: SessionEndReason; error?: string }>;
+  // ticket #30：DriverSession.pid 刻意不实现——Agent SDK 的 query() 返回的
+  // Query 公开接口（sdk.d.ts，成员：interrupt/setModel/close/…）不暴露子进程
+  // pid，子进程由 SDK 托管 spawn。票面约束：不改 SDK 包、不 monkey-patch。
+  // 崩溃孤儿风险由 SDK 自身进程关系承担（utility 崩溃时二级清扫对本 driver
+  // 豁免——contract 套件 supportsPid=false，见 claude.contract.test.ts）。
   private readonly inbox = createUserMessageInbox();
   private readonly abortController = new AbortController();
   private readonly state: DriverState = { toolCalls: new Map(), turnActive: true, cancelled: false };

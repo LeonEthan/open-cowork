@@ -239,6 +239,8 @@ export function createAcpDriver(spec: AcpAgentSpec): AgentDriver {
 
 class AcpDriverSession implements DriverSession {
   readonly done: Promise<{ reason: SessionEndReason; error?: string }>;
+  /** ticket #30：自 spawn 的 ACP agent 子进程 pid（进程注册表二级清扫用） */
+  readonly pid: number | undefined;
   private readonly state: AcpState;
   private alive = true;
   private resolveDone!: (v: { reason: SessionEndReason; error?: string }) => void;
@@ -254,6 +256,8 @@ class AcpDriverSession implements DriverSession {
       env: { ...process.env, ...(spec.env ?? {}), ...(params.env ?? {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    // spawn 失败（ENOENT 等）时 child.pid 为 undefined——保持缺省，二级清扫无 pid 可登记
+    this.pid = child.pid;
 
     // ACP 严格 JSON-RPC 2.0：出站帧补 jsonrpc 字段（peer 只管分派与 id 配对）
     const peer = new JsonRpcPeer(

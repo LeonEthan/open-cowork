@@ -185,6 +185,8 @@ async function httpJson(
 
 class OpencodeDriverSession implements DriverSession {
   readonly done: Promise<{ reason: SessionEndReason; error?: string }>;
+  /** ticket #30：自 spawn 的 `opencode serve` 子进程 pid（进程注册表二级清扫用） */
+  readonly pid: number | undefined;
   private readonly state: OpencodeState;
   private alive = true;
   private sseDead = false;
@@ -201,6 +203,8 @@ class OpencodeDriverSession implements DriverSession {
       env: { ...process.env, ...(params.env ?? {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    // spawn 失败（ENOENT 等）时 child.pid 为 undefined——保持缺省，二级清扫无 pid 可登记
+    this.pid = child.pid;
 
     this.state = {
       child,

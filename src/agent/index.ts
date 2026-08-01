@@ -26,6 +26,8 @@ import { ProcessRegistry } from './processRegistry';
  *    <dataDir>/events/<taskId>/<sessionId>.jsonl（排障/回放，ARCHITECTURE §5）；
  *    start 指令落盘前脱敏（env 值 → <redacted>，凭证红线，见 redactStartCommandForBypass）；
  * 4. 进程注册表两级清理：运行时 Map + 启动时 sweepStale（见 processRegistry.ts）；
+ *    ticket #30：登记 driver 子进程 pid（二级清扫事实源）+ 崩溃兜底钩子
+ *    （uncaughtException/unhandledRejection → 同步 killAll + SIGKILL 登记 pid → 非零退出）；
  * 5. 审批中继（ticket #20 替换全允许桩）：driver permissionHandler → permission-ask
  *    转发 main 审批服务（策略引擎/托盘决议），agent-command permission-respond 回执
  *    resolve 挂起的 handler。fail-closed 红线不变：handler 异常/超时 driver 层 deny；
@@ -35,8 +37,10 @@ import { ProcessRegistry } from './processRegistry';
  *   in : {type:'init', dataDir}
  *        {type:'agent-command', command: StartCommand | FollowupCommand | CancelCommand | PermissionRespondCommand}
  *        {type:'agent-port'}（附带 MessagePort，见 services/system.ts 接线）
+ *        {type:'shutdown'}（#30：main before-quit 宽限期起点）
  *   out: {type:'agent-event', taskId, event}  —— main 侧持久化分派
  *        {type:'permission-ask', taskId, request} —— #20 审批询问（main 策略引擎裁决）
+ *        {type:'shutdown-complete'} —— #30 清理完成回报（宽限期取先到者）
  * 与 renderer 的协议（MessagePort）：
  *   in : {type:'ping'}
  *   out: {type:'pong', at} | {type:'agent-event', taskId, event}
@@ -338,6 +342,9 @@ function handleStart(cmd: StartCommand): void {
     kill: () => {
       void driver.cancel();
     },
+    // ticket #30：driver 自 spawn 的子进程 pid 一并登记——二级清扫（sweepStale）
+    // 的唯一事实源；pid 不可得（claude，SDK 托管子进程）则缺省
+    ...(typeof driver.pid === 'number' ? { pids: [driver.pid] } : {}),
   });
 
   void driver.done
@@ -394,6 +401,38 @@ function shutdown(): void {
   } catch {
     // 忽略
   }
+  // ticket #30：回报 main 清理完成——main before-quit 的宽限期取
+  // 「本回报 / 宽限超时」先到者后再杀 utility 本体
+  try {
+    parentPort?.postMessage({ type: 'shutdown-complete' });
+  } catch {
+    // main 已退：忽略
+  }
+}
+
+// ── ticket #30：崩溃兜底 ────────────────────────────────────────────────────
+// utility 崩溃时 shutdown/killAll 不会执行，driver 子进程非 detached——父死即成
+// 孤儿（macOS 不回收），且 persist 的状态文件只能等下次启动 sweepStale 补救。
+// 兜底：同步 best-effort killAll（driver cancel 先走 SIGTERM 路径），再对已登记
+// pid 直接 SIGKILL（cancel 是 async——崩溃路径等不到它的 await 段，权威清杀靠
+// 这里的同步 SIGKILL），最后以非零码退出（main 的 exit 监听照旧走
+// recoverInterruptedTasks，语义不变）。
+function crashExit(err: unknown, origin: string): void {
+  console.error(`[agent] ${origin}，执行崩溃兜底清理:`, err);
+  const pids = registry.registeredPids();
+  try {
+    shutdown();
+  } catch {
+    // 兜底路径不再失败
+  }
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // 已退出/无权：忽略
+    }
+  }
+  process.exit(1);
 }
 
 // ── 端口接线（renderer ⇄ utility 直连） ───────────────────────────────────
@@ -448,6 +487,9 @@ parentPort.on('message', (e) => {
 
 process.on('SIGTERM', () => shutdown());
 process.on('SIGINT', () => shutdown());
+// ticket #30：崩溃兜底——同步 best-effort killAll + 登记 pid SIGKILL 后非零退出
+process.on('uncaughtException', (err) => crashExit(err, 'uncaughtException'));
+process.on('unhandledRejection', (reason) => crashExit(reason, 'unhandledRejection'));
 
 const drivers = listDrivers();
 console.log(

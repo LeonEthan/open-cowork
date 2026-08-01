@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { BrowserWindow, app, ipcMain, utilityProcess } from 'electron';
 import { DB_FILE_NAME, DATA_SUBDIRS, resolveDataDir } from '../shared/paths';
 import { createAgentEventDispatcher, recoverInterruptedTasks } from './agentEvents';
+import { AGENT_SHUTDOWN_GRACE_MS, raceShutdownAck } from './agentShutdown';
 import { createApprovalService } from './approval/service';
 import { captureTaskChanges } from './changes/capture';
 import { openDatabase } from './db/database';
@@ -18,7 +19,8 @@ import { registerServices } from './services';
  * - utility → main 的归一事件经 createAgentEventDispatcher 落库 + 状态机迁移；
  * - utility 崩溃：活跃任务（running/awaiting_approval）标 failed（原因可查）；
  *   应用重启时 recoverInterruptedTasks 做同样的两级收尾（ARCHITECTURE §7 可恢复）；
- * - before-quit：先发 shutdown（utility 逐级 kill 子进程），再杀 utility 本体。
+ * - before-quit：先发 shutdown、留宽限期让 utility 逐级 kill 子进程
+ *   （ticket #30：等 shutdown-complete 回报或宽限超时取先到者），再杀 utility 本体。
  */
 
 let mainWindow: BrowserWindow | null = null;
@@ -168,15 +170,49 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  // 先让 utility 逐级 kill agent 子进程，再杀 utility 本体（进程注册表第一级）
-  try {
-    agentProcess?.postMessage({ type: 'shutdown' });
-  } catch {
-    // 进程已退：忽略
+// ticket #30：before-quit 两阶段——首次触发 preventDefault 进入宽限期，
+// 宽限期结束（utility 回报/硬超时先到者）后置位 quitArmed 重新 app.quit() 放行
+let quitArmed = false;
+let agentShutdownInFlight = false;
+
+app.on('before-quit', (event) => {
+  if (quitArmed) return; // 宽限期结束后的真正退出
+  const proc = agentProcess;
+  if (!proc) {
+    db?.close();
+    db = null;
+    return;
   }
-  agentProcess?.kill();
-  agentProcess = null;
-  db?.close();
-  db = null;
+  // 留宽限期让 utility 完成 driver 侧 cancel 链（SIGTERM 升级），再杀 utility 本体；
+  // 此前同步立即 kill——cancel 未及发出 SIGTERM 即随进程消失（崩溃场景外的
+  // 正常退出也依赖这段宽限，票面证据 5）。
+  event.preventDefault();
+  if (agentShutdownInFlight) return; // 重复触发（如连按 ⌘Q）：等首个宽限链收尾
+  agentShutdownInFlight = true;
+
+  let resolveAck!: () => void;
+  const ack = new Promise<void>((r) => {
+    resolveAck = r;
+  });
+  proc.on('message', (msg: { type?: string } | null) => {
+    if (msg?.type === 'shutdown-complete') resolveAck();
+  });
+  proc.once('exit', () => resolveAck()); // utility 已退/先死：不再等
+  try {
+    proc.postMessage({ type: 'shutdown' });
+  } catch {
+    resolveAck(); // 进程已退：直接收尾
+  }
+  void raceShutdownAck(ack, AGENT_SHUTDOWN_GRACE_MS).then(() => {
+    quitArmed = true;
+    try {
+      proc.kill();
+    } catch {
+      // 已退出：忽略
+    }
+    if (agentProcess === proc) agentProcess = null;
+    db?.close();
+    db = null;
+    app.quit(); // 第二次 before-quit：quitArmed 已置位，直接放行
+  });
 });
