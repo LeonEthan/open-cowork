@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { AgentDriver, AgentEvent, DriverSession, DriverStartParams, PermissionDecision, PermissionRequestPayload } from '../../src/agent/events';
+import type { AgentDriver, AgentEvent, AlwaysAllowRule, DriverSession, DriverStartParams, PermissionDecision, PermissionRequestPayload } from '../../src/agent/events';
 import { pidAlive } from '../../src/agent/processRegistry';
 
 /**
@@ -69,6 +69,8 @@ export async function runSession(
     permissionHandler?: (req: PermissionRequestPayload) => Promise<PermissionDecision>;
     /** ticket #20：审批等待超时（毫秒，超时=deny fail-closed）；缺省 driver 默认 120s */
     permissionTimeoutMs?: number;
+    /** ticket #31（additive）：注入「总是允许」规则集（driver 层规则预过滤用例）；缺省空 */
+    alwaysAllowRules?: AlwaysAllowRule[];
     afterStart?: (session: DriverSession) => void;
     /** 每个归一事件到达时的钩子（可驱动追问/取消，免去裸 sleep） */
     onEvent?: (event: AgentEvent, session: DriverSession) => void;
@@ -93,6 +95,7 @@ export async function runSession(
       ...(typeof opts.permissionTimeoutMs === 'number'
         ? { permissionTimeoutMs: opts.permissionTimeoutMs }
         : {}),
+      ...(opts.alwaysAllowRules ? { alwaysAllowRules: opts.alwaysAllowRules } : {}),
     },
     (e) => {
       events.push(e);
@@ -510,6 +513,105 @@ export function defineContractSuite(entry: DriverHarnessEntry): void {
           always: true,
         });
       }
+      });
+    }
+
+    // ── ticket #31（additive）：多行命令的规则匹配安全语义 ──
+    // 匹配层正确性的 driver 侧保证：permission_request payload.input 携带完整未截断
+    // 命令（首行/截断投影只在 target 展示字段）；driver 层规则预过滤用完整命令，
+    // 首行命中的规则不得放行多行全文，逐行全命中才 auto_allow。
+
+    if (nativeApproval) {
+      it('#31：permission_request payload.input 保留完整多行命令（不截断不投影）', async () => {
+      const FULL = 'npm install\nrm -rf ~';
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        {
+          action: 'emit',
+          event: {
+            kind: 'permission_request',
+            id: 'perm_multiline',
+            toolName: 'Bash',
+            input: { command: FULL },
+            reason: '多行命令',
+          },
+        },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      const { collected, end } = await runSession(entry, script);
+      expect(end.reason).toBe('completed');
+      const req = collected.byType('permission_request')[0];
+      // 核心断言：完整多行命令原样进 payload.input（匹配层的输入保证）
+      expect((req.request.input as { command?: unknown } | null)?.command).toBe(FULL);
+      // target 是展示投影，形状各家不同（claude/codex 取首行；opencode/acp 持 wire 原文）——
+      // 两种形态都合法，因为它永不进匹配链（#31 后匹配一律从 input 取完整文本）
+      expect(req.request.target === 'npm install' || req.request.target === FULL).toBe(true);
+      const res = collected.byType('permission_response')[0];
+      expect(res.decision.behavior).toBe('allow');
+      });
+
+      it('#31 绕过剧本：首行命中的精确规则不得放行多行命令（降级 handler 逐条决议）', async () => {
+      const FULL = 'npm install\nrm -rf ~';
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        {
+          action: 'emit',
+          event: {
+            kind: 'permission_request',
+            id: 'perm_bypass',
+            toolName: 'Bash',
+            input: { command: FULL },
+            reason: '多行命令',
+          },
+        },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      let handlerCalls = 0;
+      const { collected, end } = await runSession(entry, script, {
+        // 只命中首行的无通配精确规则——修复前会 auto_allow 整段多行命令
+        alwaysAllowRules: [{ tool: 'Bash', targetPattern: 'npm install' }],
+        permissionHandler: async () => {
+          handlerCalls += 1;
+          return { behavior: 'allow' }; // 模拟用户逐条批准一次
+        },
+      });
+      expect(end.reason).toBe('completed');
+      // 修复核心：规则不得 auto_allow——必须降级到 handler（托盘逐条审批）
+      expect(handlerCalls).toBe(1);
+      const res = collected.byType('permission_response')[0];
+      expect(res.decision).toEqual({ behavior: 'allow' }); // allow_once：无 always 字段
+      });
+
+      it('#31 多行全命中：每一行都命中同一条通配规则才 auto_allow（不调 handler）', async () => {
+      const script = writeScript([
+        { action: 'expect_stdin' },
+        {
+          action: 'emit',
+          event: {
+            kind: 'permission_request',
+            id: 'perm_all_hit',
+            toolName: 'Bash',
+            input: { command: 'npm install\nnpm test' },
+            reason: '多行命令',
+          },
+        },
+        { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+        { action: 'exit', code: 0 },
+      ]);
+      let handlerCalls = 0;
+      const { collected, end } = await runSession(entry, script, {
+        alwaysAllowRules: [{ tool: 'Bash', targetPattern: 'npm *' }],
+        permissionHandler: async () => {
+          handlerCalls += 1;
+          return { behavior: 'deny', message: '不应到达（规则应直放）' };
+        },
+      });
+      expect(end.reason).toBe('completed');
+      expect(handlerCalls).toBe(0); // 规则直放，不打扰用户
+      const res = collected.byType('permission_response')[0];
+      expect(res.decision).toEqual({ behavior: 'allow', always: true });
       });
     }
   });

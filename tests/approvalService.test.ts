@@ -28,13 +28,17 @@ interface PostedMsg {
 }
 
 function makeRequest(over: Partial<PermissionRequestPayload> = {}): PermissionRequestPayload {
+  const toolName = over.toolName ?? 'Bash';
+  const target = over.target !== undefined ? over.target : 'npm install -D eslint';
   return {
     id: over.id ?? `perm_${Math.random().toString(36).slice(2, 8)}`,
-    toolName: 'Bash',
-    target: 'npm install -D eslint',
+    toolName,
+    target,
     reason: '安装开发依赖',
     options: ['allow_once', 'allow_always', 'deny'],
-    input: { command: 'npm install -D eslint' },
+    // ticket #31：规则匹配以 input 完整命令为准——fixture 保持 target/input 一致
+    // （driver 实发语义）；显式传 over.input 可构造不一致场景
+    input: over.input !== undefined ? over.input : toolName === 'Bash' ? { command: target } : {},
     ...over,
   };
 }

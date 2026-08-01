@@ -10,6 +10,7 @@ import type {
   SessionEndReason,
 } from '../events';
 import { matchesAlwaysAllowRule } from '../events';
+import { deriveDisplayTarget, ruleMatchTarget } from '../commandTarget';
 import type { AgentDriverDefinition } from './registry';
 import type {
   Query,
@@ -94,44 +95,13 @@ function createUserMessageInbox(): {
   };
 }
 
-/** 极简工具行的「目标」归纳（icon + 名称 + 目标 + 状态，DESIGN.md §4） */
+/**
+ * 极简工具行的「目标」归纳（icon + 名称 + 目标 + 状态，DESIGN.md §4）。
+ * ticket #31：投影实现收口共享 normalizer（deriveDisplayTarget = 首行 + 120 截断）——
+ * 本投影**仅展示用**；规则匹配一律走 ruleMatchTarget 取完整命令文本（见 canUseTool）。
+ */
 export function deriveToolTarget(name: string, input: unknown, blockedPath?: string): string | null {
-  const obj = (input ?? {}) as Record<string, unknown>;
-  const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
-  let target: string | null = null;
-  switch (name) {
-    case 'Bash':
-      target = str(obj.command)?.split('\n')[0] ?? null;
-      break;
-    case 'Edit':
-    case 'Write':
-    case 'Read':
-    case 'NotebookEdit':
-      target = str(obj.file_path);
-      break;
-    case 'Glob':
-    case 'Grep':
-      target = str(obj.pattern);
-      break;
-    case 'LS':
-      target = str(obj.path);
-      break;
-    case 'WebFetch':
-      target = str(obj.url);
-      break;
-    case 'WebSearch':
-      target = str(obj.query);
-      break;
-    case 'Task':
-    case 'Agent':
-      target = str(obj.description) ?? str(obj.prompt);
-      break;
-    default:
-      target = null;
-  }
-  target = target ?? (blockedPath ?? null);
-  if (!target) return null;
-  return target.length > 120 ? `${target.slice(0, 120)}…` : target;
+  return deriveDisplayTarget(name, input, blockedPath ?? null);
 }
 
 /** tool_result 内容转纯文本摘要（截断 2000 字符，排障够用即可） */
@@ -325,8 +295,12 @@ class ClaudeDriverSession implements DriverSession {
       emit({ type: 'permission_request', request });
 
       // 「总是允许」规则命中直接放行（#20 注入规则集；本票为空）
+      // ticket #31：匹配用完整命令文本（input 原样携带，未截断）——request.target
+      // 是首行+截断的展示投影，永不进匹配链；多行命令逐行全命中才放行
+      // （语义见 events.ts matchesAlwaysAllowRule，绕过剧本 "npm install\nrm -rf ~" 不再放行）
       const rules = params.alwaysAllowRules ?? [];
-      const ruleHit = rules.some((r) => matchesAlwaysAllowRule(r, toolName, request.target));
+      const matchTarget = ruleMatchTarget(toolName, input, request.target);
+      const ruleHit = rules.some((r) => matchesAlwaysAllowRule(r, toolName, matchTarget));
       let decision: PermissionDecision;
       if (ruleHit) {
         decision = { behavior: 'allow', always: true };

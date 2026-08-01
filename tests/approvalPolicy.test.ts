@@ -81,6 +81,155 @@ describe('审批策略引擎（三档 × 命中 × 读/写类矩阵）', () => {
   });
 });
 
+/**
+ * ticket #31 策略集成：规则匹配改用**完整命令**（input 提取），展示投影 target 不进匹配链；
+ * 多行命令逐行全命中才 auto_allow，任一行未命中 → ask（非 deny）。
+ * 每例的 target 均为首行+截断投影（模拟 driver 实发），input 携完整未截断命令。
+ */
+describe('#31 完整命令匹配（policy 集成）', () => {
+  interface FullCase {
+    name: string;
+    rules: AlwaysAllowRule[];
+    toolName: string;
+    /** driver 实发的展示投影（首行+截断） */
+    target: string | null;
+    /** driver 实发的完整 input（未截断） */
+    input?: unknown;
+    expect: 'auto_allow' | 'ask';
+    rulePattern?: string;
+  }
+  const NPM_WILDCARD: AlwaysAllowRule = { tool: 'Bash', targetPattern: 'npm *' };
+  const NPM_EXACT: AlwaysAllowRule = { tool: 'Bash', targetPattern: 'npm install' };
+
+  const FULL_CASES: FullCase[] = [
+    {
+      name: '单行命中（完整文本匹配）',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'npm install -D eslint',
+      input: { command: 'npm install -D eslint' },
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm *',
+    },
+    {
+      name: '单行未命中 → ask',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'yarn add eslint',
+      input: { command: 'yarn add eslint' },
+      expect: 'ask',
+    },
+    {
+      name: '多行全命中 → auto_allow（每行都命中同一条规则，幂等合理）',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\nnpm test' },
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm *',
+    },
+    {
+      name: '多行部分命中 → ask（越权行拦下，不 auto_allow 也不 deny）',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\nrm -rf ~' },
+      expect: 'ask',
+    },
+    {
+      name: '空行与 # 注释行忽略 → auto_allow',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\n\n# 然后跑测试\nnpm test' },
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm *',
+    },
+    {
+      name: '绕过剧本：无通配精确规则 + 多行（"npm install\\nrm -rf ~"）→ ask（#31 修复核心）',
+      rules: [NPM_EXACT],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\nrm -rf ~' },
+      expect: 'ask',
+    },
+    {
+      name: '绕过剧本变体：首行通配投影不放大授权（尾行 rm 拦下）',
+      rules: [{ tool: 'Bash', targetPattern: 'npm install*' }],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\nrm -rf ~' },
+      expect: 'ask',
+    },
+    {
+      name: '精确规则单行完整命中仍放行（不误伤既有记忆）',
+      rules: [NPM_EXACT],
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install' },
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm install',
+    },
+    {
+      name: '截断投影不作数：>120 字符命令按完整文本匹配（通配前缀命中）',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: `npm run ${'x'.repeat(108)}…`, // 展示投影：120 截断
+      input: { command: `npm run ${'x'.repeat(200)}` },
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm *',
+    },
+    {
+      name: '截断投影不作数：截断处恰成精确匹配也不命中（完整文本 ≠ 规则）',
+      rules: [{ tool: 'Bash', targetPattern: `npm run ${'x'.repeat(105)}` }],
+      toolName: 'Bash',
+      target: `npm run ${'x'.repeat(108)}…`,
+      input: { command: `npm run ${'x'.repeat(200)}` },
+      expect: 'ask',
+    },
+    {
+      name: 'input 缺席的旧调用形状：回退 target 匹配（兼容）',
+      rules: [NPM_WILDCARD],
+      toolName: 'Bash',
+      target: 'npm test',
+      expect: 'auto_allow',
+      rulePattern: 'Bash: npm *',
+    },
+    {
+      name: '非 Bash 工具：完整路径匹配精确规则（input.file_path）',
+      rules: [{ tool: 'Write', targetPattern: '/repo/.eslintrc.json' }],
+      toolName: 'Write',
+      target: '/repo/.eslintrc.json',
+      input: { file_path: '/repo/.eslintrc.json' },
+      expect: 'auto_allow',
+      rulePattern: 'Write: /repo/.eslintrc.json',
+    },
+  ];
+
+  for (const c of FULL_CASES) {
+    it(c.name, () => {
+      const verdict = decidePermission('auto', c.rules, {
+        toolName: c.toolName,
+        target: c.target,
+        ...(c.input !== undefined ? { input: c.input } : {}),
+      });
+      expect(verdict.kind).toBe(c.expect);
+      if (c.expect === 'auto_allow') {
+        expect((verdict as { rulePattern: string | null }).rulePattern).toBe(c.rulePattern ?? null);
+      }
+    });
+  }
+
+  it('只读档不受 #31 影响：多行命令仍一律 auto_deny（「一律」无例外）', () => {
+    const verdict = decidePermission('readonly', [NPM_WILDCARD], {
+      toolName: 'Bash',
+      target: 'npm install',
+      input: { command: 'npm install\nnpm test' },
+    });
+    expect(verdict.kind).toBe('auto_deny');
+  });
+});
+
 describe('规则匹配 matchesAlwaysAllowRule（events.ts 权威匹配器）', () => {
   const rule = (targetPattern: string, tool = 'Bash'): AlwaysAllowRule => ({ tool, targetPattern });
 

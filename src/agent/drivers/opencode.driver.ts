@@ -10,6 +10,7 @@ import type {
   SessionEndReason,
 } from '../events';
 import { resolvePermission } from './permission';
+import { deriveDisplayTarget } from '../commandTarget';
 import type { AgentDriverDefinition } from './registry';
 import { createLineSplitter } from './jsonRpcPeer';
 import { createSseParser } from './sseParser';
@@ -74,38 +75,13 @@ function normalizeToolName(tool: string): string {
   }
 }
 
-/** 极简工具行的「目标」归纳（opencode 工具入参键名：filePath/command/pattern…） */
+/**
+ * 极简工具行的「目标」归纳（opencode 工具入参键名：filePath/command/pattern…）。
+ * ticket #31：投影实现收口共享 normalizer（键名兼容在 normalizer 内）——
+ * 本投影**仅展示用**；规则匹配经 resolvePermission 的 ruleMatchTarget 取完整命令文本。
+ */
 function deriveOpencodeTarget(tool: string, input: unknown): string | null {
-  const obj = (input ?? {}) as Record<string, unknown>;
-  const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
-  let target: string | null = null;
-  switch (tool.toLowerCase()) {
-    case 'bash':
-      target = str(obj.command)?.split('\n')[0] ?? null;
-      break;
-    case 'edit':
-    case 'write':
-    case 'read':
-      target = str(obj.filePath) ?? str(obj.file_path);
-      break;
-    case 'glob':
-    case 'grep':
-      target = str(obj.pattern);
-      break;
-    case 'webfetch':
-      target = str(obj.url);
-      break;
-    case 'websearch':
-      target = str(obj.query);
-      break;
-    case 'task':
-      target = str(obj.description) ?? str(obj.prompt);
-      break;
-    default:
-      target = null;
-  }
-  if (!target) return null;
-  return target.length > 120 ? `${target.slice(0, 120)}…` : target;
+  return deriveDisplayTarget(tool, input);
 }
 
 interface PartState {

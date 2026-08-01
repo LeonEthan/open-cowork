@@ -2,8 +2,15 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
+
+/** Node ABI 的 better-sqlite3 副本（vitest alias 同源；e2e 跑在 Node 上）——#31 规则种库用 */
+const nodeRequire = createRequire(join(process.cwd(), 'e2e', 'approval-flow.spec.ts'));
+const Database = nodeRequire(
+  join(process.cwd(), 'node_modules', 'better-sqlite3-node', 'lib', 'index.js'),
+) as typeof import('better-sqlite3');
 
 /**
  * 权限审批流（ticket #20）端到端：fake agent 发 permission_request →
@@ -286,6 +293,66 @@ test('⌘3 附理由拒绝：理由随 deny 回传 agent（wire + JSONL 双断�
         { timeout: 10_000 },
       )
       .toBe(true);
+  } finally {
+    await app.close();
+  }
+});
+
+test('#31：规则命中首行也不自动放行多行命令——托盘出现 → ⌘1 放行一次', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'open-cowork-e2e31-'));
+  const wsDir = await mkdtemp(join(tmpdir(), 'open-cowork-ws-'));
+
+  const script = [
+    { action: 'expect_stdin' },
+    {
+      action: 'emit',
+      event: {
+        kind: 'permission_request',
+        id: 'perm_multiline',
+        toolName: 'Bash',
+        // 绕过剧本：首行 npm install 命中规则，第二行 rm -rf ~ 越权——
+        // 修复前按首行投影 auto_allow 全文；修复后逐行全命中才可直放
+        input: { command: 'npm install\nrm -rf ~' },
+        reason: '多行命令',
+        // wire 级断言：⌘1 必须回 allow 且不回写权限（allow_once 语义）
+        expectResponse: { behavior: 'allow', updatedPermissions: null },
+      },
+    },
+    { action: 'emit', event: { kind: 'text', text: '命令已执行。' } },
+    { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+    { action: 'exit', code: 0 },
+  ];
+
+  const app = await launchWithScript({ dataDir, script });
+  try {
+    await setupWorkspaceAndTask(app, wsDir, '跑一段多行命令');
+    const win = (await app.windows())[0];
+
+    // DB 直接种规则「Bash: npm *」（不走 UI；策略引擎逐 ask 现查规则表，此刻种入即生效）
+    {
+      const db = new Database(join(dataDir, 'open-cowork.db'));
+      db.prepare(
+        'INSERT INTO always_allow_rules (id, tool, target_pattern, created_at) VALUES (?, ?, ?, ?)',
+      ).run(`e2e31-${Date.now()}`, 'Bash', 'npm *', Date.now());
+      db.close();
+    }
+
+    await win.getByTestId('send-button').click();
+
+    // 修复核心：首行命中规则也不得 auto_allow——第二行未命中，托盘必须出现（逐条审批）
+    const tray = win.getByTestId('approval-tray');
+    await expect(tray).toBeVisible({ timeout: 15_000 });
+    await expect(win.getByTestId('approval-current')).toContainText('Bash');
+    // 托盘展示为首行投影（展示用途不变）；完整命令在 payload.input 中保留
+    await expect(win.getByTestId('approval-target')).toContainText('npm install');
+
+    // ⌘1 放行一次 → 托盘消失 → 轮次完成（wire 断言见脚本 expectResponse）
+    await win.keyboard.press('Meta+1');
+    await expect(tray).toHaveCount(0, { timeout: 15_000 });
+    await expect(win.getByTestId('permission-row').first()).toContainText('已允许');
+    await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
+      timeout: 15_000,
+    });
   } finally {
     await app.close();
   }

@@ -53,7 +53,11 @@ export interface PermissionRequestPayload {
   id: string;
   /** 工具名（Bash / Edit / …） */
   toolName: string;
-  /** 作用目标（命令行 / 文件路径），规则匹配与托盘展示用 */
+  /**
+   * 作用目标（命令行 / 文件路径）的**展示投影**（首行 + 截断，commandTarget.ts
+   * displayTarget）——托盘展示用。ticket #31：规则匹配**不得**用本字段，
+   * 一律经 ruleMatchTarget(toolName, input, target) 取完整命令文本（多行全命中语义）。
+   */
   target: string | null;
   /** agent 给出的理由（如 sandbox 拦截说明）；无则 null */
   reason: string | null;
@@ -92,7 +96,27 @@ export interface AlwaysAllowRule {
   targetPattern: string;
 }
 
-/** 目标是否命中规则（`*` 通配；target 为 null 时仅匹配模式同为空/`'*'` 的规则） */
+/** 单文本命中（`*` 通配；无通配 = 字面精确；正则元字符按字面处理） */
+function matchTargetPattern(pattern: string, target: string): boolean {
+  if (pattern === '*') return true;
+  if (!pattern.includes('*')) return target === pattern;
+  const parts = pattern.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${parts.join('.*')}$`, 's').test(target);
+}
+
+/**
+ * 目标是否命中规则（`*` 通配；target 为 null 时仅匹配模式同为空/`'*'` 的规则）。
+ *
+ * ticket #31 多行语义（安全红线：进匹配链的必须是完整命令文本——首行/截断的
+ * 展示投影永不进匹配链，见 commandTarget.ts）：
+ * - 单行：完整文本匹配规则模式（既有行为不变）；
+ * - 多行：按行拆分（忽略空行与 `#` 注释行，行首尾空白不计），**每一行都必须命中
+ *   本规则**才算命中——任一行未命中即整体未命中（调用方降级为逐条审批 ask，非 deny）。
+ *   示例：规则 `Bash: npm *` 对 "npm install\nnpm test" 放行（幂等合理），
+ *   对 "npm install\nrm -rf ~" 不命中（安全）；精确规则 `Bash: npm install`
+ *   对多行文本同样不再被首行投影绕过。
+ * - 全空/全注释文本：按既有单文本语义匹配（等效无操作命令，不构成放行面扩大）。
+ */
 export function matchesAlwaysAllowRule(
   rule: AlwaysAllowRule,
   toolName: string,
@@ -100,11 +124,12 @@ export function matchesAlwaysAllowRule(
 ): boolean {
   if (rule.tool !== toolName) return false;
   const t = target ?? '';
-  const p = rule.targetPattern;
-  if (p === '*') return true;
-  if (!p.includes('*')) return t === p;
-  const parts = p.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp(`^${parts.join('.*')}$`, 's').test(t);
+  const lines = t
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('#'));
+  if (lines.length === 0) return matchTargetPattern(rule.targetPattern, t);
+  return lines.every((l) => matchTargetPattern(rule.targetPattern, l));
 }
 
 /**
