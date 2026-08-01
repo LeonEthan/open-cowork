@@ -11,36 +11,6 @@
   background: var(--bg);
 }
 
-/* ── 顶栏 ─────────────────────────────── */
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 12px;
-  background: var(--bg-soft);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--font-size-ui);
-  color: var(--ink-2);
-  flex: none;
-  -webkit-app-region: drag;
-}
-.topbar button {
-  -webkit-app-region: no-drag;
-}
-.topbar .brand {
-  font-weight: 650;
-  color: var(--ink);
-}
-.topbar .spacer {
-  flex: 1;
-}
-.topbar .utility-status {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-2);
-}
-
 .icon-btn {
   display: inline-flex;
   align-items: center;
@@ -674,4 +644,53 @@ button:disabled {
   justify-content: flex-end;
 }
 /* ── ticket #19 end ────────────────────────────────────── */
+
+/* ── ticket #33：窗口 chrome 归零（DESIGN.md §1.1）─────────────────
+   自定义顶栏整条废除；hiddenInset 红绿灯嵌入侧栏顶部安全区；
+   折叠开关居内容区左上角小图标行；主题切换归设置区外观区块；
+   utility 直连状态折进设置区诊断区块。全部引用 token，明暗双主题通用。 */
+
+/* 红绿灯安全留白 + 窗口拖拽区（覆盖侧栏顶端空白带；hiddenInset 红绿灯约 x12–78/y0–28） */
+.traffic-light-safe {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 88px;
+  height: 40px;
+  -webkit-app-region: drag;
+  z-index: 30;
+}
+
+/* 侧栏顶端为红绿灯预留安全区（追加覆盖，不改原侧栏规则块） */
+.sidebar .pane-body {
+  padding-top: 40px;
+}
+
+/* 折叠开关小图标行：内容区左上角（§1.1），吸顶常驻不随滚动消失；
+   行本身兼任窗口拖拽区（hiddenInset 下替代原生标题栏拖拽），按钮 no-drag */
+.content-controls {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  padding: 8px 0 4px 8px;
+  background: var(--bg);
+  -webkit-app-region: drag;
+}
+.content-controls .icon-btn {
+  -webkit-app-region: no-drag;
+}
+/* 侧栏折叠时内容区顶到窗口左缘：开关行右移让位红绿灯 */
+.content.sidebar-collapsed .content-controls {
+  padding-left: 88px;
+}
+
+/* utility 直连状态（原顶栏调试行，已迁入设置区诊断区块；主界面不常驻，§1.1） */
+.utility-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+/* ── ticket #33 end ────────────────────────────────────── */
 

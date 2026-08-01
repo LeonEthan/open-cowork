@@ -79,6 +79,9 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     show: false,
+    // ticket #33（DESIGN.md §1.1 窗口 chrome 归零）：原生标题栏隐藏，
+    // 红绿灯嵌入侧栏顶部安全区（renderer 侧 .traffic-light-safe 预留拖拽/留白）
+    titleBarStyle: 'hiddenInset',
     // 与 DESIGN.md §2 token 同源的值（main 进程拿不到 CSS 变量，仅为避免深色主题启动闪白）
     backgroundColor: '#363B40',
     webPreferences: {

@@ -60,11 +60,14 @@ test('terminal tab: shell 就绪后键入命令有执行回显', async () => {
       .toContain('ocinnerdone');
 
     // 主题切换 → 终端配色重读 CSS 变量（DESIGN.md §6：禁止硬编码色值）。
-    // xterm 把 theme.background 落到 .xterm-viewport 的 inline style 上。
+    // ticket #33（§1.1）：顶栏 theme-toggle 已撤入设置区外观区块（三态单选），
+    // 选与当前解析主题相反的显式档；检查栏（终端）不受视图切换影响，会话保活。
     const before = await host.locator('.xterm-viewport').evaluate(
       (el) => (el as HTMLElement).style.backgroundColor,
     );
-    await win.getByTestId('theme-toggle').click();
+    await win.getByTestId('open-settings').click();
+    const resolvedTheme = await win.evaluate(() => document.documentElement.dataset.theme);
+    await win.getByTestId(resolvedTheme === 'dark' ? 'theme-mode-light' : 'theme-mode-dark').click();
     await expect
       .poll(async () =>
         host.locator('.xterm-viewport').evaluate((el) => (el as HTMLElement).style.backgroundColor),

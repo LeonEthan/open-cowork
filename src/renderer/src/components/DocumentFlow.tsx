@@ -10,6 +10,7 @@ import { useUsageStore } from '../stores/usage';
 import { describeTurnUsage, describeTurnUsageTitle } from '../../../shared/usageFormat';
 import type { PermissionMode, TaskListItem } from '../../../shared/api';
 import { ApprovalTray } from './ApprovalTray';
+import { ContentControls } from './ContentControls';
 import { ContextRing } from './ContextRing';
 import { Markdown } from './Markdown';
 
@@ -26,12 +27,19 @@ import { Markdown } from './Markdown';
 
 export function DocumentFlow(): React.JSX.Element {
   const view = useUiStore((s) => s.view);
+  // ticket #33：侧栏折叠时内容区顶到窗口左缘，折叠开关行让位红绿灯（hiddenInset）
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const currentTaskId = useAppStore((s) => s.currentTaskId);
   const tasks = useDataStore((s) => s.tasks);
   const task = currentTaskId ? (tasks.find((t) => t.id === currentTaskId) ?? null) : null;
 
   return (
-    <main className="content" data-testid="document-flow">
+    <main
+      className={`content${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+      data-testid="document-flow"
+    >
+      {/* ticket #33（§1.1）：折叠开关小图标行居内容区左上（设置/文档视图均常驻） */}
+      <ContentControls />
       <div className="content-inner">
         {view === 'settings' ? (
           <>
