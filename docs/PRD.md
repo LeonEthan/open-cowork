@@ -39,13 +39,13 @@
 ### 4.1 单会话对话闭环
 
 - 文档式会话流：用户消息、agent 回复（markdown 流式渲染）、工具调用极简行、思考过程折叠区。
-- 输入区：单圆角框，内嵌 agent/model chip、附件、权限档位 chip、context 水位环、发送键。
+- 输入区（composer）：底部居中悬浮卡片，三行结构 = 上下文行（workspace/agent/model chip）/ 输入 / 动作行（附件、权限档位 chip、context 水位环、发送键）（DESIGN.md §3/§4）。
 - 任务六态状态机：`ready → running ⇄ awaiting_approval → awaiting_review → done`（+`failed`/`cancelled`）。
 - 内置终端 tab（node-pty + xterm.js）。
 
 ### 4.2 权限审批流（[原型](https://github.com/LeonEthan/open-cowork/tree/prototype/approval-flow)，票 #8）
 
-- **呈现**：文档流中工具调用为极简行（icon + 名称 + 目标 + 状态）；待审批项在输入区上方底部托盘逐条聚焦。
+- **呈现**：文档流中工具调用为极简行（icon + 名称 + 目标 + 状态）；待审批项在 composer 上方底部托盘逐条聚焦。
 - **操作**：批准一次 ⌘1 / 总是允许 ⌘2 / 拒绝 ⌘3（拒绝可附理由）；并发审批排队预览。
 - **权限档位**：三档 per-task 切换——只读 / 自动（默认）/ 完全放权。
 - **「总是允许」**：按工具 + 目标模式记忆（如 `Bash: npm *`），规则可回写 agent 侧。
@@ -86,10 +86,11 @@
 
 ## 5. 界面规格（票 #9，[原型](https://github.com/LeonEthan/open-cowork/tree/prototype/typora-ui)）
 
-布局骨架抄 Codex，视觉语言抄 Typora 官方默认主题。所有规则以 [设计宪法](DESIGN.md) 为准，此处仅列骨架：
+布局骨架全对齐 Codex 桌面端（ticket #32），视觉语言抄 Typora 官方默认主题。所有规则以 [设计宪法](DESIGN.md) 为准，此处仅列骨架：
 
-- **三栏**：任务侧栏（240px 可折叠）｜会话文档流（内容栏 max-width 860px 居中）｜检查栏（320px，变更/终端 tab，可折叠；文件复查并入变更 tab，见 DESIGN.md §1）。
-- 明暗双主题，默认跟随系统，手动切换记忆偏好。
+- **窗口 chrome 归零**：无自定义顶栏，macOS 红绿灯 hiddenInset 嵌入侧栏顶部；侧栏折叠开关居内容区左上（DESIGN.md §1.1）。
+- **三栏**：任务侧栏（240px 可折叠；IA = 功能行 → 按 workspace 分组任务树 → 底部设置行，DESIGN.md §1.3）｜会话文档流（内容栏 max-width 860px 居中；composer 约 760px 底部居中悬浮卡片）｜检查栏（320px，变更/终端 tab，**上下文化出现、无内容不占位**；文件复查并入变更 tab，见 DESIGN.md §1.2）。
+- 明暗双主题，默认跟随系统，手动切换记忆偏好（切换入口在侧栏底部设置行）。
 
 ## 6. 数据概念模型（票 #7）
 
@@ -118,3 +119,4 @@ Task 与 agent session 1:1。详见 [架构决策集](ARCHITECTURE.md) §5。
 - 开发者场景之后的泛知识工作扩展形态
 - MCP / 插件生态的接入方式
 - UI 多语言（中英）
+- Pinned 置顶任务（二期：tasks 表加列 + 新 migration 槽位，侧栏任务树增设 Pinned 分组；见 DESIGN.md 附录 A）
