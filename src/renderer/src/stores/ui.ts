@@ -15,6 +15,8 @@ interface UiState {
   view: MainView;
   /** utility 直连活性（MessageChannel ping-pong） */
   utilityPong: boolean;
+  /** ticket #35（additive）：侧栏 workspace 分组折叠态记忆（默认展开；true=折叠） */
+  sidebarWsCollapsed: Record<string, boolean>;
 
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
@@ -22,6 +24,8 @@ interface UiState {
   setActiveInspectorTab: (id: string) => void;
   setView: (view: MainView) => void;
   setUtilityPong: (pong: boolean) => void;
+  /** ticket #35（additive）：切换某 workspace 分组的展开/折叠 */
+  toggleSidebarWorkspace: (id: string) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -33,6 +37,7 @@ export const useUiStore = create<UiState>()(
       activeInspectorTab: null,
       view: 'document',
       utilityPong: false,
+      sidebarWsCollapsed: {},
 
       setThemeMode: (themeMode) => set({ themeMode }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -40,6 +45,10 @@ export const useUiStore = create<UiState>()(
       setActiveInspectorTab: (activeInspectorTab) => set({ activeInspectorTab }),
       setView: (view) => set({ view }),
       setUtilityPong: (utilityPong) => set({ utilityPong }),
+      toggleSidebarWorkspace: (id) =>
+        set((s) => ({
+          sidebarWsCollapsed: { ...s.sidebarWsCollapsed, [id]: !s.sidebarWsCollapsed[id] },
+        })),
     }),
     {
       name: 'open-cowork:ui',
@@ -49,6 +58,8 @@ export const useUiStore = create<UiState>()(
         sidebarCollapsed: s.sidebarCollapsed,
         inspectorCollapsed: s.inspectorCollapsed,
         activeInspectorTab: s.activeInspectorTab,
+        // ticket #35：workspace 分组折叠态属用户偏好，随记忆落盘
+        sidebarWsCollapsed: s.sidebarWsCollapsed,
       }),
     },
   ),

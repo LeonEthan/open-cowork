@@ -69,6 +69,10 @@ async function setupWorktreeTask(
   await win.getByTestId('task-worktree-checkbox').check();
   await win.getByTestId('task-create-submit').click();
   await expect(win.getByTestId('task-item')).toHaveCount(1);
+  // ticket #35：worktree 任务在侧栏带分支徽标（cowork/<taskId>，#25 数据已具备）
+  await expect(
+    win.getByTestId('task-item').first().getByTestId('task-branch-badge'),
+  ).toContainText('cowork/');
 }
 
 /** dataDir/worktrees/ 下当前唯一的 worktree 目录（不存在返回 null） */

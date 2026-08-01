@@ -43,6 +43,11 @@
   --border: color-mix(in srgb, var(--ink) 14%, transparent);
   --ink-3: color-mix(in srgb, var(--ink) 48%, var(--bg));
   --selection: color-mix(in srgb, var(--accent) 24%, transparent);
+
+  /* --bg-pill（§2/ticket #32 立法，ticket #35 实装）：侧栏 workspace 行/任务行的
+     选中态背景 pill；hover 取同系减半浓度（bg-pill 50% 混入 bg-soft 派生，见 app.css）。
+     仅限侧栏行选中/hover 底，不得挪作他用（§2 派生 token 条款）。 */
+  --bg-pill: color-mix(in srgb, var(--ink) 6%, var(--bg-soft));
 }
 
 :root[data-theme="dark"] {
@@ -62,4 +67,6 @@
   --ink-3: color-mix(in srgb, var(--ink) 48%, var(--bg));
   /* 深色文本选中色为 §2 指定值 */
   --selection: #4a89dc;
+  /* --bg-pill 深色派生式（§2：ink 10% 混入 bg-soft；用途同浅色，仅限侧栏行选中/hover） */
+  --bg-pill: color-mix(in srgb, var(--ink) 10%, var(--bg-soft));
 }
