@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { DocumentFlow } from './components/DocumentFlow';
 import { Inspector } from './components/Inspector';
 import { Sidebar } from './components/Sidebar';
-import { TopBar } from './components/TopBar';
 import { useAgentPort } from './hooks/useAgentPort';
 import { useTheme } from './hooks/useTheme';
 import { useDataStore } from './stores/data';
@@ -28,7 +27,8 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app">
-      <TopBar />
+      {/* ticket #33（§1.1）：hiddenInset 红绿灯嵌入侧栏顶部——预留安全留白 + 窗口拖拽区 */}
+      <div className="traffic-light-safe" aria-hidden="true" />
       <div className="main">
         <Sidebar />
         <DocumentFlow />
