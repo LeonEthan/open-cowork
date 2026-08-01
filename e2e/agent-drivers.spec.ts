@@ -16,6 +16,8 @@ import type { ElectronApplication } from '@playwright/test';
 
 const FAKE_CLAUDE = join(process.cwd(), 'tests', 'fake-agent', 'cli.mjs');
 const FAKE_CODEX = join(process.cwd(), 'tests', 'fake-agent', 'bin', 'fake-codex');
+// #23：pi driver 已接入——picker 注入点与 driver executablePath 同源
+const FAKE_PI = join(process.cwd(), 'tests', 'fake-agent', 'bin', 'fake-pi');
 
 interface LaunchOpts {
   dataDir: string;
@@ -28,9 +30,10 @@ async function launchApp(opts: LaunchOpts): Promise<ElectronApplication> {
   const env: Record<string, string> = {
     ...process.env,
     OPEN_COWORK_DATA_DIR: opts.dataDir,
-    // 探测注入：claude/codex 指向 fake（picker 应可选；pi 无覆盖且一律「即将支持」）
+    // 探测注入：claude/codex/pi 指向 fake（picker 应可选；opencode 无覆盖则「未安装」）
     OPEN_COWORK_CLAUDE_CLI: FAKE_CLAUDE,
     OPEN_COWORK_CODEX_CLI: FAKE_CODEX,
+    OPEN_COWORK_PI_CLI: FAKE_PI,
     ...(opts.path ? { PATH: opts.path } : {}),
   };
   if (opts.script) {
@@ -41,12 +44,12 @@ async function launchApp(opts: LaunchOpts): Promise<ElectronApplication> {
   return electron.launch({ args: ['.'], env, timeout: 30_000 });
 }
 
-test('会话 picker 按探测结果列出四家：env 覆盖可选，未安装/未接入置灰', async () => {
+test('会话 picker 按探测结果列出四家：env 覆盖可选，未安装置灰', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'open-cowork-e2e22p-'));
   const wsDir = await mkdtemp(join(tmpdir(), 'open-cowork-ws-'));
 
-  // PATH 压到系统目录：屏蔽本机真实 codex/opencode/claude 二进制（探测确定性）。
-  // 此时 claude/codex 经 env 覆盖「已安装」，opencode 无覆盖「未安装」，pi「即将支持」。
+  // PATH 压到系统目录：屏蔽本机真实 codex/opencode/claude/pi 二进制（探测确定性）。
+  // 此时 claude/codex/pi 经 env 覆盖「已安装」（#23 pi 已接入），opencode 无覆盖「未安装」。
   const app = await launchApp({ dataDir, path: '/usr/bin:/bin' });
   try {
     const win = await app.firstWindow();
@@ -69,14 +72,18 @@ test('会话 picker 按探测结果列出四家：env 覆盖可选，未安装/�
     await expect(option('codex')).not.toHaveAttribute('disabled', '');
     await expect(option('opencode')).toHaveAttribute('disabled', '');
     await expect(option('opencode')).toContainText('未安装');
-    await expect(option('pi')).toHaveAttribute('disabled', '');
-    await expect(option('pi')).toContainText('即将支持');
+    // #23：pi 不再是「即将支持」——env 覆盖探测到即可选
+    await expect(option('pi')).not.toHaveAttribute('disabled', '');
+    await expect(option('pi')).not.toContainText('即将支持');
 
     // 回填逻辑选中第一个可用 agent（catalog 序：claude-code）
     await expect(select).toHaveValue('claude-code');
     // 可改选 codex（已安装）
     await select.selectOption('codex');
     await expect(select).toHaveValue('codex');
+    // #23：可改选 pi（已安装）
+    await select.selectOption('pi');
+    await expect(select).toHaveValue('pi');
   } finally {
     await app.close();
   }

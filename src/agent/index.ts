@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { getDriverDefinition, listDrivers } from './drivers/registry';
 import type {
   AgentEvent,
+  AlwaysAllowRule,
   DriverStartParams,
   PermissionDecision,
   PermissionHandler,
@@ -198,6 +199,17 @@ interface StartCommand {
   env?: Record<string, string>;
   /** 审批等待超时（毫秒，超时=deny fail-closed）；缺省 driver 默认 120s */
   permissionTimeoutMs?: number;
+  /**
+   * ticket #23（additive）：任务权限档位——仅降级 driver（pi）由 main 注入；
+   * 经附加字段透传 driver（DriverStartParams 无此字段，events.ts 冻结期缝隙，
+   * pi driver 以 PiDriverStartParams 收窄读取；其余 driver 忽略）。
+   */
+  permissionMode?: string;
+  /**
+   * ticket #23（additive）：「总是允许」规则快照——仅降级 driver（pi）由 main 注入；
+   * 原生 driver 的规则口径仍收敛在 main 策略引擎（#20 单一口径，不经此路）。
+   */
+  alwaysAllowRules?: AlwaysAllowRule[];
 }
 
 interface FollowupCommand {
@@ -263,8 +275,11 @@ function handleStart(cmd: StartCommand): void {
       ? { permissionTimeoutMs: cmd.permissionTimeoutMs }
       : {}),
     // executablePath 缺省——claude driver 读 OPEN_COWORK_CLAUDE_CLI（e2e 覆盖点）
-    // alwaysAllowRules 缺省——#20 规则匹配收敛在 main 策略引擎层（单一口径，
-    // 中途新增的规则即时生效；driver 预过滤参数留给降级 driver 用）
+    // #23：降级 driver（pi）静态策略输入——规则快照进既有 alwaysAllowRules 字段；
+    // permissionMode 无对应字段（events.ts 冻结），以结构化附加属性透传，
+    // pi driver 以 PiDriverStartParams 收窄读取（spread 附带，其余 driver 不感知）。
+    ...(Array.isArray(cmd.alwaysAllowRules) ? { alwaysAllowRules: cmd.alwaysAllowRules } : {}),
+    ...(typeof cmd.permissionMode === 'string' ? { permissionMode: cmd.permissionMode } : {}),
   };
 
   let driver;

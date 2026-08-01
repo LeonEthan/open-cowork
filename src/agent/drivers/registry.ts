@@ -9,7 +9,7 @@ import type { AgentDriver } from '../events';
  * 3. 完成。无需编辑本文件——import.meta.glob('./*.driver.ts') 自动收集。
  *
  * 内置 driver：claude（ticket #19，drivers/claude.driver.ts）；
- * codex / opencode（#22）、pi（#23，降级审批）后续按同一接口补。
+ * codex / opencode（#22）；pi（#23，降级审批——静态策略兜底）。
  * 审批链路一律 fail-closed（ARCHITECTURE §10）。
  */
 

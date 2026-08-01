@@ -6,7 +6,10 @@ import { useAgentsStore } from '../../stores/agents';
  * 数据源 = main 探测结果（services/agentDetect.ts 经 stores/agents.ts）：
  * - 已安装且 driver 已接入 → 可选；
  * - 未安装 → 置灰，标注「未安装」；
- * - driver 未接入（pi 属 #23）→ 一律置灰，标注「即将支持」（即使二进制存在）。
+ * - driver 未接入 → 一律置灰，标注「即将支持」（即使二进制存在）。
+ *
+ * ticket #23：pi driver 已接入（降级审批）——pi 项不再是「即将支持」，
+ * 与其他三家同走「探测到即可选」逻辑（driverAvailable 翻转在 agentDetect.ts，本组件无需分支）。
  *
  * 样式复用 .task-form 的 field/select（§4 边框分层），不新增视觉元素。
  * data-testid="task-agent-select" 与占位 select 保持一致（e2e 兼容面）。
