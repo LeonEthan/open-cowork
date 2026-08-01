@@ -52,10 +52,12 @@ Electron 三进程：
 - **凭证**：Electron safeStorage / Keychain 加密。
 - **模型清单**：六家预设 + `/models` 拉取 + models.dev 元数据（上下文长度、价格）。
 
-## 4. 界面架构（票 #9）
+## 4. 界面架构（票 #9；ticket #32 全对齐修订）
 
-- 布局骨架 = Codex 三栏工作台；视觉语言 = Typora 官方默认主题 token 直采（浅色=github / 深色=night）。
-- 一切 UI 实现受 [设计宪法](DESIGN.md) 约束（白名单语义色、零阴影、三类动效上限、明暗双主题）。
+- 布局骨架 = Codex 桌面端完整对齐（DESIGN.md §1）：**无自定义顶栏**（macOS 红绿灯 `hiddenInset` 嵌入侧栏顶部）；侧栏 IA 三段（功能行 / 按 workspace 分组任务树 / 底部设置行）；composer 约 760px 底部居中悬浮卡片；检查栏上下文化（无内容不挂载、不占位）。
+- renderer 结构对应调整：TopBar 组件移除；侧栏折叠开关居内容区左上；主题切换归设置（侧栏底部设置行入口）。
+- 视觉语言 = Typora 官方默认主题 token 直采（浅色=github / 深色=night）。
+- 一切 UI 实现受 [设计宪法](DESIGN.md) 约束（白名单语义色、零阴影、圆角四档、三类动效上限、明暗双主题）。
 
 ## 5. 数据模型与存储（票 #7）
 
