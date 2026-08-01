@@ -200,6 +200,16 @@ export interface DriverSession {
   cancel(): Promise<void>;
   /** 会话终结 promise（与 session_ended 事件同源，二选一消费） */
   readonly done: Promise<{ reason: SessionEndReason; error?: string }>;
+  /**
+   * ticket #30（additive，events.ts 冻结后唯一授权扩展）：driver 自 spawn 的
+   * agent 子进程 pid。宿主登记进进程注册表（RegisteredProcess.pids）——
+   * utility 崩溃后第二级清扫（sweepStale）的唯一事实源；缺省时二级清扫
+   * 对该会话无能为力。
+   * 可选不破坏现有五家 driver：子进程由第三方托管的 driver（claude——
+   * Agent SDK query()/Query 公开接口不暴露子进程 pid）不声明本字段，
+   * 其崩溃孤儿风险由 SDK 自身进程关系承担（见 claude.driver.ts 注释）。
+   */
+  readonly pid?: number;
 }
 
 /**
