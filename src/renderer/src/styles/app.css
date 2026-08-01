@@ -40,14 +40,14 @@
   overflow: hidden;
 }
 
-/* 任务侧栏（240px，可折叠：负 margin 实现 slide） */
+/* 任务侧栏（240px，可折叠：负 margin 实现 slide）。
+   ticket #35（§1.3 修订）：右边线移除，以 --bg-soft 底色与文档区分层。 */
 .sidebar {
   width: var(--sidebar-w);
   flex: none;
   display: flex;
   flex-direction: column;
   background: var(--bg-soft);
-  border-right: 1px solid var(--border);
   transition: margin-left 200ms ease;
 }
 .sidebar.collapsed {
@@ -200,12 +200,13 @@
   background: var(--ink-3);
 }
 
-/* 任务列表（§1：状态点 + 标题 + 元信息；无多余装饰） */
-.task-list,
-.ws-list {
+/* 任务列表（§1.3：状态点 + 标题 + 元信息，缩进于 workspace 行之下；
+   ticket #35 / §4 侧栏行约定：选中 = --bg-pill 背景 pill、无描边；
+   hover 取同系减半浓度——bg-pill 50% 混入 bg-soft，恰好 ink 浓度减半） */
+.task-list {
   list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+  margin: 0 0 4px;
+  padding: 0 0 0 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -216,15 +217,14 @@
   gap: 8px;
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid transparent;
   border-radius: var(--radius-1);
   text-align: left;
 }
 .task-item:hover {
-  border-color: var(--border);
+  background: color-mix(in srgb, var(--bg-pill) 50%, var(--bg-soft));
 }
 .task-item[aria-current='true'] {
-  border-color: var(--accent);
+  background: var(--bg-pill);
 }
 .task-item .status-dot {
   flex: none;
@@ -248,39 +248,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* workspace 列表（名称 + 路径元信息 + 移除） */
-.ws-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: var(--radius-1);
-}
-.ws-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ws-name {
-  font-size: 14px;
-  color: var(--ink);
-}
-.ws-path {
-  font-size: 12px;
-  color: var(--ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ws-remove {
-  flex: none;
-}
-.ws-section > .icon-btn,
-.task-section > .icon-btn {
-  margin-top: 8px;
 }
 
 /* 新建任务表单（§4 输入区精神：边框分层、聚焦仅边框变深、无光晕） */
@@ -727,3 +694,115 @@ button:disabled {
   background: var(--accent);
 }
 /* ── ticket #34 end ────────────────────────────────────── */
+
+/* ── ticket #35 ─────────────────────────────────────────────
+   侧栏 IA 重构（§1.3）：功能行 + workspace 分组树。
+   行选中/hover 一律 --bg-pill 系（§2 派生 token、§4 侧栏行约定：无描边，
+   hover 取同系减半浓度 = bg-pill 50% 混入 bg-soft）。 */
+
+/* 功能行：新建任务 icon + 文字行（无多余分组装饰） */
+.tree-section {
+  display: flex;
+  flex-direction: column;
+}
+.tree-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-1);
+  font-size: 14px;
+  color: var(--ink);
+  text-align: left;
+}
+.tree-action:hover {
+  background: color-mix(in srgb, var(--bg-pill) 50%, var(--bg-soft));
+}
+.tree-action-icon {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* workspace 分组树：workspace 行（chevron + 文件夹 icon + 名称），hover 同系减半 */
+.ws-tree {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-1);
+}
+.ws-row:hover {
+  background: color-mix(in srgb, var(--bg-pill) 50%, var(--bg-soft));
+}
+.ws-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-1);
+  text-align: left;
+}
+.ws-chevron {
+  flex: none;
+  width: 10px;
+  font-size: 10px;
+  color: var(--ink-2);
+}
+.ws-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--ink-2);
+}
+.ws-name {
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 管理操作（移除）hover 露出；键盘聚焦同样可见 */
+.ws-remove {
+  flex: none;
+  opacity: 0;
+}
+.ws-row:hover .ws-remove,
+.ws-remove:focus-visible {
+  opacity: 1;
+}
+.ws-empty {
+  padding: 2px 8px 4px 34px;
+  font-size: 12px;
+}
+
+/* worktree 任务分支徽标（§3 元信息/徽标 10.5–12.5px 档；边框分层、零阴影） */
+.task-branch-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  vertical-align: baseline;
+}
+
+/* 「添加 workspace」入口收在分组区底部 */
+.tree-add {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+/* ── ticket #35 end ─────────────────────────────────────── */

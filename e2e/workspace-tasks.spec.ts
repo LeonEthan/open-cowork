@@ -1,6 +1,6 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
 
@@ -36,8 +36,9 @@ test('workspace 与任务：创建 → 关窗重开后完整恢复', async () =>
       await window.openCowork?.workspaces.addByPath(p);
     }, wsDir);
     await win.reload();
+    // ticket #35：workspace 行 = chevron + 文件夹 icon + 名称（basename；全路径在 title）
     await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-    await expect(win.getByTestId('workspace-item').first()).toContainText(wsDir);
+    await expect(win.getByTestId('workspace-item').first()).toContainText(basename(wsDir));
 
     // 经 UI 表单建任务：需求描述 + agent/provider/model 占位 picker
     await win.getByTestId('new-task-toggle').click();
@@ -68,15 +69,31 @@ test('workspace 与任务：创建 → 关窗重开后完整恢复', async () =>
     await win.waitForLoadState('domcontentloaded');
 
     await expect(win.getByTestId('workspace-item')).toHaveCount(1);
-    await expect(win.getByTestId('workspace-item').first()).toContainText(wsDir);
+    await expect(win.getByTestId('workspace-item').first()).toContainText(basename(wsDir));
 
     await expect(win.getByTestId('task-item')).toHaveCount(1);
     const item = win.getByTestId('task-item').first();
     await expect(item).toHaveAttribute('data-status', 'ready');
     await expect(item).toContainText('实现一个 hello world 脚本');
 
+    // ticket #35：workspace 分组折叠——折叠后任务行隐藏；折叠态经 ui store 持久化记忆
+    await win.getByTestId('workspace-toggle').first().click();
+    await expect(win.getByTestId('workspace-toggle').first()).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(win.getByTestId('task-item')).toHaveCount(0);
+    await win.reload();
+    await expect(win.getByTestId('workspace-toggle').first()).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(win.getByTestId('task-item')).toHaveCount(0);
+    await win.getByTestId('workspace-toggle').first().click();
+    await expect(win.getByTestId('task-item')).toHaveCount(1);
+
     // 重启后选中态为瞬态（未持久化）：点击任务项，文档流恢复呈现
-    await item.click();
+    await win.getByTestId('task-item').first().click();
     await expect(win.getByTestId('document-flow')).toContainText('实现一个 hello world 脚本');
   } finally {
     await app.close();
