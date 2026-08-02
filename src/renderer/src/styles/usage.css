@@ -4,10 +4,12 @@
  * 语义色仅警告橙（§2 白名单）；无动效（§5 三类之外不引入）。
  */
 
-/* ── 侧栏任务项：用量汇总 chip（第三行灰字，与 .task-meta 同层级） ── */
+/* ── 侧栏任务项：用量汇总 chip（title 行右端小灰字，附录 B 审计 P0；口径全在 tooltip） ── */
 .task-usage {
-  font-size: 12px;
-  color: var(--ink-2);
+  flex: none;
+  max-width: 46%;
+  font-size: 11px;
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

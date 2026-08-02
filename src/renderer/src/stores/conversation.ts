@@ -75,12 +75,20 @@ export interface TaskConversation {
   items: ConversationItem[];
   /** 一轮是否进行中（turn_end 前；输入区发送/取消键的依据之一） */
   turnActive: boolean;
+  /** Codex 对齐（附录 B）：历史轮次元数据（started_at/ended_at 降序无，按 idx 升序）——工作摘要行时长数据源 */
+  turns: Array<{ id: string; idx: number; status: string; startedAt: number; endedAt: number | null }>;
+  /** Codex 对齐（附录 B，瞬态）：live 轮次计时锚点——turnActive false→true 记录开始，turn_end/session_ended 记录结束 */
+  turnStartedAt: number | null;
+  turnEndedAt: number | null;
 }
 
 const emptyConversation = (): TaskConversation => ({
   sessionId: null,
   items: [],
   turnActive: false,
+  turns: [],
+  turnStartedAt: null,
+  turnEndedAt: null,
 });
 
 interface ConversationState {
@@ -209,7 +217,22 @@ export const useConversationStore = create<ConversationState>()((set, get) => {
       set((s) => ({
         byTask: {
           ...s.byTask,
-          [taskId]: { sessionId: null, items, turnActive: runningTurn },
+          [taskId]: {
+            sessionId: null,
+            items,
+            turnActive: runningTurn,
+            // 附录 B：轮次元数据随历史基线落 store（工作摘要行时长）
+            turns: history.turns.map((t) => ({
+              id: t.id,
+              idx: t.idx,
+              status: t.status,
+              startedAt: t.started_at,
+              endedAt: t.ended_at,
+            })),
+            // 历史基线接管后 live 计时锚点重置（运行中轮次以落库 started_at 为准）
+            turnStartedAt: null,
+            turnEndedAt: null,
+          },
         },
       }));
     },
@@ -289,16 +312,21 @@ function sealStreaming(items: ConversationItem[]): ConversationItem[] {
 }
 
 function applyNonDeltaEvent(c: TaskConversation, event: AgentEvent): TaskConversation {
+  // 附录 B：live 轮次计时锚点——false→true 记录开始；结束事件记录结束
+  const beginTurn = (next: TaskConversation): TaskConversation =>
+    c.turnActive ? next : { ...next, turnStartedAt: Date.now(), turnEndedAt: null };
+  const endTurn = (next: TaskConversation): TaskConversation =>
+    c.turnActive ? { ...next, turnEndedAt: Date.now() } : next;
   switch (event.type) {
     case 'session_started':
-      return { ...c, sessionId: event.sessionId, turnActive: true };
+      return beginTurn({ ...c, sessionId: event.sessionId, turnActive: true });
 
     case 'tool_call': {
       const items = [...c.items];
       const idx = items.findIndex((it) => it.kind === 'tool' && it.call.id === event.call.id);
       if (idx >= 0) items[idx] = { kind: 'tool', call: event.call };
       else items.push({ kind: 'tool', call: event.call });
-      return { ...c, items, turnActive: true };
+      return beginTurn({ ...c, items, turnActive: true });
     }
 
     case 'permission_request': {
@@ -317,7 +345,7 @@ function applyNonDeltaEvent(c: TaskConversation, event: AgentEvent): TaskConvers
     }
 
     case 'turn_end':
-      return { ...c, items: sealStreaming(c.items), turnActive: false };
+      return endTurn({ ...c, items: sealStreaming(c.items), turnActive: false });
 
     case 'usage':
       // ticket #27：本轮末尾的用量灰字（pending——turn_end 后 reconcile 补折算口径）
@@ -346,7 +374,7 @@ function applyNonDeltaEvent(c: TaskConversation, event: AgentEvent): TaskConvers
       return { ...c, items: [...sealStreaming(c.items), { kind: 'error', message: event.message }] };
 
     case 'session_ended':
-      return { ...c, items: sealStreaming(c.items), turnActive: false };
+      return endTurn({ ...c, items: sealStreaming(c.items), turnActive: false });
 
     case 'text_delta':
     case 'thinking_delta':

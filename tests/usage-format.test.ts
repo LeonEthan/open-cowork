@@ -3,6 +3,7 @@ import {
   CONTEXT_WARN_THRESHOLD,
   contextRatio,
   describeTaskUsage,
+  describeTaskUsageShort,
   describeTaskUsageTitle,
   describeTurnUsage,
   describeTurnUsageTitle,
@@ -109,8 +110,30 @@ describe('轮次小字（describeTurnUsage）', () => {
   });
 });
 
-describe('任务汇总 chip（describeTaskUsage）', () => {
+describe('任务汇总 chip 短正文（describeTaskUsageShort，附录 B 审计 P0）', () => {
   const totals = (partial: Partial<UsageTotals>): UsageTotals => ({
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0,
+    hasPriced: false,
+    hasSubscription: false,
+    records: 1,
+    ...partial,
+  });
+
+  it('省单位短形：token 量 + 金额，订阅标注不进正文', () => {
+    expect(
+      describeTaskUsageShort(
+        totals({ inputTokens: 10_000, outputTokens: 2_000, costUsd: 0.06, hasPriced: true, hasSubscription: true }),
+      ),
+    ).toBe('12.0k · $0.06');
+    expect(describeTaskUsageShort(totals({ inputTokens: 800, outputTokens: 199 }))).toBe('999');
+  });
+});
+
+describe('任务汇总 chip（describeTaskUsage）', () => {  const totals = (partial: Partial<UsageTotals>): UsageTotals => ({
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,

@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Fragment } from 'react';
 import { settingsSections } from '../extensions/registry';
-import { useInspectorVisible } from '../hooks/useInspectorVisible';
-import { MODE_LABELS, MODE_NEXT, MODE_TITLES } from '../lib/permissionMode';
-import { STATUS_LABELS, agentLabel, statusDotClass } from '../lib/taskStatus';
+import { agentLabel } from '../lib/taskStatus';
+import { diffstatOf, groupByTurn, matchGroupTurns } from '../lib/turnGroups';
 import { useAppStore } from '../stores/appStore';
+import { useChangesStore } from '../stores/changes';
 import { useConversationStore } from '../stores/conversation';
 import type { ConversationItem } from '../stores/conversation';
 import { useDataStore } from '../stores/data';
 import { useUiStore } from '../stores/ui';
 import { useUsageStore } from '../stores/usage';
 import { describeTurnUsage, describeTurnUsageTitle } from '../../../shared/usageFormat';
-import type { PermissionMode, TaskListItem } from '../../../shared/api';
+import type { FileChange, PermissionMode, TaskListItem } from '../../../shared/api';
 import { ApprovalTray } from './ApprovalTray';
 import { ContentControls } from './ContentControls';
 import { ContextRing } from './ContextRing';
 import { HomeView } from './HomeView';
 import { Markdown } from './Markdown';
+import { PermissionModePicker } from './pickers/PermissionModePicker';
+import { TaskHeader } from './TaskHeader';
+import { WorkGroupRow } from './WorkGroupRow';
 
 /**
  * 内容栏（文档流，§1 的主角）：max-width 860px 居中。
@@ -39,32 +42,14 @@ export function DocumentFlow(): React.JSX.Element {
   const tasks = useDataStore((s) => s.tasks);
   const task = currentTaskId ? (tasks.find((t) => t.id === currentTaskId) ?? null) : null;
 
-  // ticket #34：检查栏开关居内容区右上角（§1.2；左上角是侧栏开关，不得占用）
-  const inspectorVisible = useInspectorVisible();
-  const toggleInspector = useUiStore((s) => s.toggleInspector);
-  const changesBadge = useUiStore((s) => s.changesBadge);
-
   return (
     <main
       className={`content${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
       data-testid="document-flow"
     >
-      {/* ticket #33（§1.1）：折叠开关小图标行居内容区左上（设置/文档视图均常驻） */}
+      {/* ticket #33（§1.1）：折叠开关小图标行居内容区左上（设置/文档视图均常驻）；
+          ticket #34 检查栏开关同条右端（迁 ContentControls，随 sticky 条常驻不随滚动） */}
       <ContentControls />
-      {/* ticket #34（§1.2）：检查栏开关居内容区右上角（⌘J；变更新内容带状态点） */}
-      <button
-        type="button"
-        className="icon-btn inspector-toggle"
-        data-testid="toggle-inspector"
-        aria-pressed={inspectorVisible}
-        title={inspectorVisible ? '隐藏检查栏（⌘J）' : '显示检查栏（⌘J）'}
-        onClick={() => toggleInspector(inspectorVisible)}
-      >
-        ⇥
-        {changesBadge && (
-          <span className="inspector-badge" data-testid="inspector-badge" aria-hidden />
-        )}
-      </button>
       <div className="content-inner">
         {view === 'settings' ? (
           <>
@@ -84,6 +69,9 @@ export function DocumentFlow(): React.JSX.Element {
     </main>
   );
 }
+
+/** 空变更快照的稳定引用（selector 回退用，防 getSnapshot 缓存破坏） */
+const NO_CHANGES: FileChange[] = [];
 
 // ── 会话视图 ─────────────────────────────────────────────────────────────
 
@@ -113,6 +101,14 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
   const displayItems: ConversationItem[] =
     items.length === 0 && task.status === 'ready' ? [{ kind: 'user', text: task.prompt }] : items;
 
+  // Codex 对齐（附录 B）：按轮分组——工具/思考/审批行折叠进「工作中/已工作」摘要行；
+  // 组 ↔ 轮次元数据配对（时长数据源），live 轮走 conversation 的计时锚点
+  const groups = groupByTurn(displayItems);
+  const groupTurns = matchGroupTurns(groups, conversation?.turns ?? []);
+  // ⚠️ selector 不得就地 ?? []（每次调用新引用 → getSnapshot 缓存破坏，无限重渲染）
+  const taskChanges = useChangesStore((s) => s.byTask[task.id]);
+  const stat = diffstatOf(taskChanges ?? NO_CHANGES);
+
   // 自动吸底：新增条目/流式增长时，若视口本在底部附近则跟随
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -126,16 +122,7 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
 
   return (
     <article className="task-article" data-testid="current-task">
-      <h1 className="doc-title">{task.title}</h1>
-      <p className="task-detail-status">
-        <span className={statusDotClass(task.status)} data-testid="detail-status-dot" />
-        <span data-testid="detail-status-label">{STATUS_LABELS[task.status]}</span>
-        <span className="muted">
-          · {task.workspace_name} · {agentLabel(task.agent_type)}
-          {task.provider_name ? ` · ${task.provider_name}` : ''}
-          {task.model ? ` · ${task.model}` : ''}
-        </span>
-      </p>
+      <TaskHeader task={task} />
 
       {task.status === 'failed' && <FailedBanner task={task} />}
 
@@ -143,9 +130,48 @@ function TaskConversationView({ task }: { task: TaskListItem }): React.JSX.Eleme
         {displayItems.length === 0 && (
           <p className="muted">（尚无对话——点击下方「开始」让 agent 开跑。）</p>
         )}
-        {displayItems.map((item, i) => (
-          <ConversationItemView key={i} item={item} themeKey={themeKey} />
-        ))}
+        {groups.map((g, gi) => {
+          const isLast = gi === groups.length - 1;
+          const active = isLast && (conversation?.turnActive ?? false);
+          const gt = groupTurns[gi];
+          let startedAt: number | null = null;
+          let durationMs: number | null = null;
+          if (active) startedAt = gt?.startedAt ?? conversation?.turnStartedAt ?? null;
+          else if (gt?.endedAt != null) durationMs = gt.endedAt - gt.startedAt;
+          else if (
+            isLast &&
+            conversation?.turnStartedAt != null &&
+            conversation?.turnEndedAt != null
+          )
+            durationMs = conversation.turnEndedAt - conversation.turnStartedAt;
+          return (
+            <Fragment key={gi}>
+              {g.user && <ConversationItemView item={g.user} themeKey={themeKey} />}
+              {g.work.length > 0 && (
+                <WorkGroupRow
+                  active={active}
+                  startedAt={startedAt}
+                  durationMs={durationMs}
+                  diffstat={isLast && stat.files > 0 ? stat : null}
+                  work={g.work}
+                >
+                  {g.work.map((item, i) => (
+                    <ConversationItemView key={i} item={item} themeKey={themeKey} />
+                  ))}
+                </WorkGroupRow>
+              )}
+              {g.texts.map((item, i) => (
+                <ConversationItemView key={`t${i}`} item={item} themeKey={themeKey} />
+              ))}
+              {g.usage.map((item, i) => (
+                <ConversationItemView key={`u${i}`} item={item} themeKey={themeKey} />
+              ))}
+              {g.errors.map((item, i) => (
+                <ConversationItemView key={`e${i}`} item={item} themeKey={themeKey} />
+              ))}
+            </Fragment>
+          );
+        })}
         <div ref={endRef} className="conversation-end" />
       </div>
 
@@ -171,17 +197,7 @@ function ConversationItemView(props: { item: ConversationItem; themeKey: string 
         </div>
       );
     case 'text':
-      return (
-        // ticket #37 终审：streaming 态类让 .md 及尾随段落 inline 化，
-        // blink 光标附在流式文本行尾而非掉到独立一行（§5 光标=行尾插入点语义）
-        <div
-          className={`msg msg-assistant${item.streaming ? ' streaming' : ''}`}
-          data-testid="msg-assistant"
-        >
-          <Markdown text={item.text} themeKey={props.themeKey} />
-          {item.streaming && <span className="stream-cursor" data-testid="stream-cursor" />}
-        </div>
-      );
+      return <AssistantMsg item={item} themeKey={props.themeKey} />;
     case 'thinking':
       return (
         <details className="thinking" data-testid="msg-thinking">
@@ -206,6 +222,54 @@ function ConversationItemView(props: { item: ConversationItem; themeKey: string 
     default:
       return <></>;
   }
+}
+
+/**
+ * assistant 消息（Codex 对齐附录 B）：流式光标语义不变（ticket #37 终审）；
+ * 非流式时 hover 露出操作行——仅 copy（反馈 👍/👎 与分享不做：本地无反馈回路）。
+ */
+function AssistantMsg({
+  item,
+  themeKey,
+}: {
+  item: Extract<ConversationItem, { kind: 'text' }>;
+  themeKey: string;
+}): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div
+      className={`msg msg-assistant${item.streaming ? ' streaming' : ''}`}
+      data-testid="msg-assistant"
+    >
+      <Markdown text={item.text} themeKey={themeKey} />
+      {item.streaming && <span className="stream-cursor" data-testid="stream-cursor" />}
+      {!item.streaming && (
+        <div className="msg-actions">
+          <button
+            type="button"
+            className="icon-btn msg-copy"
+            data-testid="msg-copy"
+            title={copied ? '已复制' : '复制'}
+            onClick={() => {
+              void navigator.clipboard.writeText(item.text).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              });
+            }}
+          >
+            {copied ? (
+              '✓'
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3.5v5A1.5 1.5 0 0 0 4 10h1.5" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** 工具调用极简行（§4：icon + 名称 + 目标 + 状态；禁止大卡片） */
@@ -314,6 +378,20 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Codex 对齐（附录 B）：非 worktree 任务在上下文行显示 workspace 当前分支（组件按 task.id key 重挂，挂载即取）
+  const [branch, setBranch] = useState<string | null>(null);
+  useEffect(() => {
+    const api = window.openCowork;
+    if (!api || task.use_worktree === 1) return;
+    let cancelled = false;
+    void api.workspaces.currentBranch(task.workspace_id).then((info) => {
+      if (!cancelled) setBranch(info.isGitRepo ? info.branch : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.workspace_id, task.use_worktree]);
+
   const status = task.status;
   const canType = status === 'awaiting_review';
   const canStart = status === 'ready';
@@ -321,11 +399,12 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   const cancellable = status === 'running' || status === 'awaiting_approval';
   const mode: PermissionMode = task.permission_mode ?? 'auto';
 
-  const cycleMode = async (): Promise<void> => {
+  // Codex 对齐（附录 B，§4）：权限档位 chip 弹层化——选定即 per-task 持久化
+  const changeMode = async (next: PermissionMode): Promise<void> => {
     const api = window.openCowork;
-    if (!api) return;
+    if (!api || next === mode) return;
     try {
-      await api.approvals.setPermissionMode(task.id, MODE_NEXT[mode]);
+      await api.approvals.setPermissionMode(task.id, next);
       await refreshAll(); // tasks:changed 亦会触发重拉，这里抢一拍让 chip 即时更新
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -394,17 +473,41 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
   return (
     <div className="composer" data-testid="composer">
       <div className="composer-box">
-        {/* 第一行·上下文行（ticket #36，§4）：该任务的 workspace / Local 环境 / worktree 分支 */}
+        {/* 第一行·上下文行（Codex 对齐，附录 B 视觉复核）：分段条——该任务的
+            workspace / Local 环境 / 分支（worktree 或原目录当前分支） */}
         <div className="composer-context">
-          <span className="chip" data-testid="composer-workspace-chip">
+          <span className="context-item" data-testid="composer-workspace-chip">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 5.5 8 2l6 3.5v5L8 14l-6-3.5v-5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              <path d="M2 5.5 8 9l6-3.5M8 9v5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
             {task.workspace_name}
           </span>
-          <span className="chip" data-testid="composer-env-chip" title="本地运行，无云端环境">
+          <span className="context-item" data-testid="composer-env-chip" title="本地运行，无云端环境">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5 13.5h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
             Local
           </span>
           {task.use_worktree === 1 && (
-            <span className="chip mono" data-testid="composer-branch-chip" title="worktree 隔离分支">
+            <span className="context-item mono" data-testid="composer-branch-chip" title="worktree 隔离分支">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="4.5" cy="4" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <circle cx="11.5" cy="12" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M4.5 6v4a3 3 0 0 0 3 3h2" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
               cowork/{task.id}
+            </span>
+          )}
+          {task.use_worktree !== 1 && branch && (
+            <span className="context-item mono" data-testid="composer-branch-chip" title="当前 git 分支">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="4.5" cy="4" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <circle cx="11.5" cy="12" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M4.5 6v4a3 3 0 0 0 3 3h2" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+              {branch}
             </span>
           )}
         </div>
@@ -424,20 +527,11 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
             }
           }}
         />
-        {/* 第三行·动作行（§4）：权限档位 chip ｜ agent/provider/model 合并 chip +
+        {/* 第三行·动作行（§4）：权限档位 chip（弹层，附录 B）｜ agent/provider/model 合并 chip +
             context 水位环 + 发送/取消（右置） */}
         <div className="composer-actions">
-          {/* ticket #20：权限档位 chip（三档循环切换，per-task 持久化） */}
-          <button
-            type="button"
-            className="chip chip-btn"
-            data-testid="permission-mode-chip"
-            data-mode={mode}
-            title={MODE_TITLES[mode]}
-            onClick={() => void cycleMode()}
-          >
-            ⚙ {MODE_LABELS[mode]}
-          </button>
+          {/* ticket #20：权限档位 per-task 持久化；附录 B：循环切换改 radio 弹层 */}
+          <PermissionModePicker mode={mode} onChange={(next) => void changeMode(next)} />
           <span className="composer-actions-flex" />
           <span className="chip composer-agent-model" data-testid="composer-agent-model-chip">
             <span data-testid="composer-agent-chip">{agentLabel(task.agent_type)}</span>
@@ -451,22 +545,28 @@ function Composer({ task }: { task: TaskListItem }): React.JSX.Element {
           {cancellable ? (
             <button
               type="button"
-              className="icon-btn"
+              className="send-circle"
               data-testid="cancel-button"
               disabled={busy}
+              title={busy ? '取消中…' : '取消'}
               onClick={() => void cancel()}
             >
-              {busy ? '取消中…' : '取消'}
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" />
+              </svg>
             </button>
           ) : (
             <button
               type="button"
-              className="icon-btn"
+              className="send-circle"
               data-testid="send-button"
               disabled={sendDisabled}
+              title={busy ? '发送中…' : canStart ? '开始' : '发送'}
               onClick={() => void send()}
             >
-              {busy ? '发送中…' : canStart ? '开始' : '发送'}
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 13V3m0 0-4 4m4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           )}
         </div>

@@ -115,3 +115,78 @@ test('workspace 与任务：创建 → 关窗重开后完整恢复', async () =>
     await app.close();
   }
 });
+
+// 二期 Pinned（DESIGN.md 附录 A）：任务行置顶开关 → 置顶分组升入/取消回落，重启后 pinned 持久
+test('二期 Pinned：置顶分组出现/消失，取消置顶回落，reload 后持久', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'open-cowork-e2e-pinned-'));
+  const wsDir = await mkdtemp(join(tmpdir(), 'open-cowork-ws-'));
+
+  const script = [
+    { action: 'expect_stdin', match: 'hello world' },
+    { action: 'emit', event: { kind: 'text', text: 'hello world 脚本已完成。' } },
+    { action: 'emit', event: { kind: 'turn_end', status: 'completed' } },
+    { action: 'exit', code: 0 },
+  ];
+  const scriptFile = join(dataDir, 'fake-script.jsonl');
+  await writeFile(scriptFile, script.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+
+  const app = await electron.launch({
+    args: ['.'],
+    env: {
+      ...process.env,
+      OPEN_COWORK_DATA_DIR: dataDir,
+      OPEN_COWORK_CODEX_CLI: FAKE_CODEX,
+      FAKE_AGENT_SCRIPT: scriptFile,
+    },
+    timeout: 30_000,
+  });
+  try {
+    const win = await app.firstWindow();
+    await win.waitForLoadState('domcontentloaded');
+    await expect(win.getByTestId('task-sidebar')).toBeVisible();
+    await addWorkspaceViaBridge(win, wsDir);
+    await createTaskViaComposer(win, { prompt: '实现一个 hello world 脚本', agent: 'codex' });
+    await expect(win.getByTestId('task-item').first()).toHaveAttribute(
+      'data-status',
+      'awaiting_review',
+      { timeout: 15_000 },
+    );
+
+    // 初始：无置顶分组；任务行在 workspace 分组下，开关未按下
+    await expect(win.getByTestId('pinned-group')).toHaveCount(0);
+    const pinToggle = win.getByTestId('task-pin-toggle').first();
+    await expect(pinToggle).toHaveAttribute('aria-pressed', 'false');
+
+    // 置顶：任务升入「置顶」分组（元信息补 workspace 名），原分组回落「暂无任务」
+    await win.getByTestId('task-item').first().hover();
+    await pinToggle.click();
+    await expect(pinToggle).toHaveAttribute('aria-pressed', 'true');
+    const pinnedGroup = win.getByTestId('pinned-group');
+    await expect(pinnedGroup).toBeVisible();
+    await expect(pinnedGroup.getByTestId('task-item')).toHaveCount(1);
+    await expect(pinnedGroup.getByTestId('task-item')).toContainText('实现一个 hello world 脚本');
+    await expect(pinnedGroup.getByTestId('task-item')).toContainText(basename(wsDir));
+    // 全树仍只有一行任务（不重复出现）
+    await expect(win.getByTestId('task-item')).toHaveCount(1);
+
+    // reload：pinned 落 SQLite，分组与任务持久
+    await win.reload();
+    await expect(win.getByTestId('pinned-group').getByTestId('task-item')).toHaveCount(1);
+    await expect(win.getByTestId('task-pin-toggle').first()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    // 取消置顶：分组消失，任务回到 workspace 分组
+    await win.getByTestId('pinned-group').getByTestId('task-item').hover();
+    await win.getByTestId('task-pin-toggle').first().click();
+    await expect(win.getByTestId('pinned-group')).toHaveCount(0);
+    await expect(win.getByTestId('task-item')).toHaveCount(1);
+    await expect(win.getByTestId('task-pin-toggle').first()).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  } finally {
+    await app.close();
+  }
+});

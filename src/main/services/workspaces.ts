@@ -1,5 +1,6 @@
 import { dialog } from 'electron';
 import * as workspaceRepo from '../db/workspaceRepo';
+import { currentBranch } from '../worktree/worktree';
 import type { ServiceContext } from './index';
 
 /**
@@ -35,5 +36,21 @@ export default function register(ctx: ServiceContext): void {
       throw new Error('workspaces:remove 需要 workspace id');
     }
     workspaceRepo.remove(ctx.db, id);
+  });
+
+  // Codex 对齐（additive）：workspace 当前 git 分支——
+  // 非 git 目录 / git 命令失败一律 { isGitRepo: false, branch: null }（不抛错）；
+  // detached HEAD 时 branch 为短 SHA。纯逻辑见 worktree/worktree.ts currentBranch。
+  ctx.ipcMain.handle('workspaces:current-branch', (event, id: unknown) => {
+    const win = ctx.getMainWindow();
+    if (!win || event.sender !== win.webContents) {
+      throw new Error('workspaces:current-branch 来源非法');
+    }
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('workspaces:current-branch 需要 workspace id');
+    }
+    const ws = workspaceRepo.getById(ctx.db, id);
+    if (!ws) throw new Error(`workspace 不存在: ${id}`);
+    return currentBranch(ws.path);
   });
 }

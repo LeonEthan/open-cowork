@@ -75,10 +75,20 @@ export interface OpenCoworkApi {
   customAgents: CustomAgentsApi;
   // ── ticket #26 end ────────────────────────────────────────────────────
 
-  // ── ticket #27：用量与 context 水位 ──────────────────────────────────
+  // ── ticket #27：用量与 context 水位 ─────────────────────────────────
   /** 任务用量 chip 聚合 / 轮次小字 reconcile / 水位环分母（折算在落库时完成，只读） */
   usage: UsageApi;
   // ── ticket #27 end ────────────────────────────────────────────────────
+
+  // ── Codex 对齐（additive）：系统 shell 集成 ───────────────────────────
+  /** 文件管理器定位 / 默认方式打开（仅接受绝对路径） */
+  shell: ShellApi;
+  // ── Codex 对齐 end ────────────────────────────────────────────────────
+
+  // ── ticket #39：检查栏 git 操作（Codex Environment 对齐） ─────────────
+  /** 分支行 / 提交 / 推送 / 与 base 对比（检查栏「变更」tab 头部） */
+  git: GitApi;
+  // ── ticket #39 end ────────────────────────────────────────────────────
 }
 
 // ── ticket #18：workspace 与任务管理（本地状态） ──────────────
@@ -108,6 +118,8 @@ export interface WorkspaceApi {
   addByPath: (dirPath: string) => Promise<Workspace>;
   /** 移除 workspace（级联删除其任务） */
   remove: (id: string) => Promise<void>;
+  /** Codex 对齐（additive）：当前 git 分支；非 git 目录 isGitRepo=false/branch=null，detached HEAD 给短 SHA */
+  currentBranch: (id: string) => Promise<{ isGitRepo: boolean; branch: string | null }>;
 }
 
 export interface TaskApi {
@@ -116,6 +128,12 @@ export interface TaskApi {
   create: (input: CreateTaskInput) => Promise<Task>;
   /** 状态迁移；非法迁移 reject（状态机见 src/main/db/taskStateMachine.ts） */
   updateStatus: (id: string, status: TaskStatus) => Promise<Task>;
+  /** 置顶/取消置顶（二期 Pinned，DESIGN.md 附录 A；additive，不涉状态机） */
+  setPinned: (id: string, pinned: boolean) => Promise<Task>;
+  /** Codex 对齐（additive）：重命名（trim 后非空；成功后 main 广播 tasks:changed） */
+  rename: (id: string, title: string) => Promise<Task>;
+  /** Codex 对齐（additive）：删除任务（worktree 尽力清理；成功后 main 广播 tasks:changed） */
+  remove: (id: string) => Promise<{ ok: true }>;
 }
 
 // ── ticket #19：agent 会话控制与历史 ─────────────────────────
@@ -453,3 +471,57 @@ export interface UsageApi {
   context: (taskId: string) => Promise<UsageContextInfo>;
 }
 // ── ticket #27 end ──────────────────────────────────────────────────────
+
+// ── Codex 对齐（additive）：系统 shell 集成 ─────────────────────────────
+// 独立分组（additive；main 实现见 services/system.ts shell:* 通道）
+
+export interface ShellApi {
+  /** 在系统文件管理器中定位该路径（仅接受绝对路径） */
+  showInFolder: (path: string) => Promise<void>;
+  /** 以系统默认方式打开该路径；失败时 reject（错误串来自 shell.openPath） */
+  openPath: (path: string) => Promise<{ ok: true }>;
+}
+// ── Codex 对齐 end ────────────────────────────────────────────────────────
+
+// ── ticket #39：检查栏 git 操作（Codex Environment 对齐，additive） ───────
+// 独立分组（additive；main 实现见 src/main/git.ts + services/git.ts）
+
+/** 分支行数据（git:working-summary；非 git 仓 isGitRepo=false 其余 null） */
+export interface GitWorkingSummary {
+  isGitRepo: boolean;
+  /** 分支名；detached HEAD 给短 SHA */
+  branch: string | null;
+  /** 相对 upstream 领先；无 upstream 为 null（UI 不渲染箭头） */
+  ahead: number | null;
+  /** 相对 upstream 落后；无 upstream 为 null */
+  behind: number | null;
+}
+
+/** 与 base 对比的文件条目 */
+export interface GitCompareFile {
+  path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed';
+}
+
+/** 与 base 对比结果（git:compare-with-base；非 worktree 任务 supported=false） */
+export interface GitCompareResult {
+  supported: boolean;
+  /** base 短 SHA（展示用） */
+  baseLabel: string | null;
+  files: GitCompareFile[];
+  /** 口径：仅 tracked 内容改动（git diff --shortstat）；untracked 计入 files 但不计入 +/- */
+  insertions: number;
+  deletions: number;
+}
+
+export interface GitApi {
+  /** 分支行数据；cwd = 任务 worktree_path ?? workspace.path */
+  workingSummary: (taskId: string) => Promise<GitWorkingSummary>;
+  /** git add -A + commit -m；无改动 reject Error('没有可提交的改动')，空信息 reject */
+  commitAll: (taskId: string, message: string) => Promise<{ ok: true; sha: string }>;
+  /** git push -u origin HEAD；失败 reject 带 stderr 首行摘要 */
+  push: (taskId: string) => Promise<{ ok: true }>;
+  /** worktree 任务：工作区（含未提交）vs base SHA；非 worktree supported=false */
+  compareWithBase: (taskId: string) => Promise<GitCompareResult>;
+}
+// ── ticket #39 end ────────────────────────────────────────────────────────

@@ -12,6 +12,18 @@
   border-radius: var(--radius-2);
 }
 
+/* 附录 B 审计 P1：dock 内托盘与 composer 融合为单卡片（Codex 内联条观感）——
+   共享外框：托盘上圆角 16px + 去底边，composer 上直角；分隔线一道（composer 顶边充当） */
+.composer-dock .approval-dock {
+  margin-top: 0;
+  border-bottom: none;
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+}
+.composer-dock .approval-dock + .composer .composer-box {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 .approval-dock-title {
   display: flex;
   align-items: center;

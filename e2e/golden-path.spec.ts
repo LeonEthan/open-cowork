@@ -184,10 +184,9 @@ test('黄金路径：添加 workspace → 建任务 → ⌘1 放行 → diff 复
 
     // 用量顺带断言（精确口径已由 #27 覆盖，这里只验链路呈现）
     await expect(win.getByTestId('turn-usage')).toContainText('in /');
-    await expect(win.getByTestId('task-usage-chip')).toContainText('tokens');
+    await expect(win.getByTestId('task-usage-chip')).toContainText('1.5k'); // 短正文省单位（附录 B 审计 P0）
 
-    // 「变更」tab：hello.txt 入列（path + pending + +1/-0）
-    await win.getByTestId('inspector-tab-changes').click();
+    // 变更单栏（§1.2 修订：tab 条退场）：hello.txt 入列（path + pending + +1/-0）
     await expect(win.getByTestId('change-row')).toHaveCount(1, { timeout: 10_000 });
     const helloRow = win.locator('[data-testid="change-row"][data-path="hello.txt"]');
     await expect(helloRow).toBeVisible();
@@ -256,7 +255,6 @@ test('黄金路径（非 git 简版）：快照兜底复查 → 全部回滚 →
     });
 
     // 快照来源同样自合成 unified diff（+ 行呈现）
-    await win.getByTestId('inspector-tab-changes').click();
     await expect(win.getByTestId('change-row')).toHaveCount(1, { timeout: 10_000 });
     const row = win.locator('[data-testid="change-row"][data-path="notes.md"]');
     await expect(row).toHaveAttribute('data-status', 'pending');

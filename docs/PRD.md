@@ -119,4 +119,3 @@ Task 与 agent session 1:1。详见 [架构决策集](ARCHITECTURE.md) §5。
 - 开发者场景之后的泛知识工作扩展形态
 - MCP / 插件生态的接入方式
 - UI 多语言（中英）
-- Pinned 置顶任务（二期：tasks 表加列 + 新 migration 槽位，侧栏任务树增设 Pinned 分组；见 DESIGN.md 附录 A）

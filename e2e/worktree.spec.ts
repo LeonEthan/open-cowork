@@ -108,8 +108,7 @@ test('worktree 任务全流程：隔离运行（原目录零改动）→ 变更 
     expect(readFileSync(join(wsDir, 'hello.txt'), 'utf8')).toBe('v1\n');
     expect(git(wsDir, ['status', '--porcelain'])).toBe('');
 
-    // 变更 tab：worktree 内改动照常捕获（diff 在隔离目录量起）
-    await win.getByTestId('inspector-tab-changes').click();
+    // 变更单栏：worktree 内改动照常捕获（diff 在隔离目录量起）
     await expect(win.getByTestId('change-row')).toHaveCount(2, { timeout: 10_000 });
     await expect(
       win.locator('[data-testid="change-row"][data-path="worktree-only.txt"]'),
@@ -156,11 +155,18 @@ test('base 漂移：任务创建后原仓新提交 → 回流阻断并提示 →
     await setupWorktreeTask(app, wsDir, '漂移验证任务');
     const win = (await app.windows())[0];
 
+    // 时序钉住（终审回归）：假 agent 立即退出 → 任务落 failed，期间多次 tasks:changed 广播
+    // 会触发面板 refresh；必须先等失败态落定（广播全部落地）再制造漂移，否则漂移后的
+    // 迟到 refresh 会把「回流到原目录」换成强制键，点击落空/点错（面板快照语义被竞态打破）。
+    await expect(win.getByTestId('detail-status-label')).toHaveText('失败', {
+      timeout: 15_000,
+    });
+
     // 检查栏上下文化（§1.2/ticket #34）：任务未跑 agent 无变更，栏不占位——
-    // 先手动唤起并切到变更 tab，让 worktree 面板在漂移发生前挂载取快照（快照无漂移，守卫在服务端兜底）
+    // 先手动唤起变更单栏（§1.2 修订：tab 条退场，唤起即挂载变更组件），
+    // 让 worktree 面板在漂移发生前挂载取快照（快照无漂移，守卫在服务端兜底）
     await win.getByTestId('toggle-inspector').click();
     await expect(win.getByTestId('inspector')).toBeVisible();
-    await win.getByTestId('inspector-tab-changes').click();
     await expect(win.getByTestId('worktree-panel')).toBeVisible({ timeout: 10_000 });
 
     // 任务创建后原仓前进一次提交（base 漂移；面板状态为创建时的快照，漂移由服务端守卫兜底）

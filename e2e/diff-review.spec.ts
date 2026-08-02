@@ -86,8 +86,7 @@ test('git workspace：两文件变更 → diff 呈现 → 文件级回滚/恢复
       timeout: 15_000,
     });
 
-    // 「变更」tab：两文件入列（path + 状态徽标 + +N/-N）
-    await win.getByTestId('inspector-tab-changes').click();
+    // 变更单栏（§1.2 修订：tab 条退场，栏内直渲染变更组件）：两文件入列（path + 状态徽标 + +N/-N）
     await expect(win.getByTestId('change-row')).toHaveCount(2, { timeout: 10_000 });
     await expect(win.locator('[data-testid="change-row"][data-path="hello.txt"]')).toBeVisible();
     await expect(win.locator('[data-testid="change-row"][data-path="new-file.txt"]')).toBeVisible();
@@ -162,7 +161,6 @@ test('非 git workspace：快照兜底复查 → 全部回滚 → done → 快�
     await expect(win.getByTestId('detail-status-label')).toHaveText('待复查', {
       timeout: 15_000,
     });
-    await win.getByTestId('inspector-tab-changes').click();
     await expect(win.getByTestId('change-row')).toHaveCount(1, { timeout: 10_000 });
     const row = win.locator('[data-testid="change-row"][data-path="notes.md"]');
     await expect(row).toHaveAttribute('data-status', 'pending');

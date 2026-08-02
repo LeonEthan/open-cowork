@@ -325,13 +325,22 @@ async function probeVersion(
   // ticket #37 终审：版本串上限 120 字符——自定义 ACP agent 可注册任意命令，
   // --version 首行无长度保证，防超长串撑爆设置页徽标（完整首行仍入探测日志）
   const firstLine = raw && raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
+  // 附录 B 审计 P2：非版本串按探测失败处理返回 null——设置页只显示「已安装」，
+  // 不原文展示噪声。判据：JSON/数组行（fake harness 的 JSONL init 行，内含
+  // fake-0.0.0 这类数字字段，单靠数字判据拦不住）+ 无数字行（banner/错误提示）
+  const plausible =
+    firstLine !== null && !/^\s*[\[{]/.test(firstLine) && /\d/.test(firstLine);
   if (r.error) {
     log(`--version 探测失败: ${r.error}${r.stderr.trim() ? `（stderr: ${r.stderr.trim().slice(0, 200)}）` : ''}`);
     return null;
   }
   if (r.code !== 0) {
     log(`--version 退出码 ${r.code ?? 'null'}${r.stderr.trim() ? `（stderr: ${r.stderr.trim().slice(0, 200)}）` : ''}`);
-    return firstLine; // 部分 CLI 非零退出但仍打印版本——尽量保留
+    return plausible ? firstLine : null; // 部分 CLI 非零退出但仍打印版本——尽量保留
+  }
+  if (!plausible) {
+    log(`--version 首行不像版本串，按未探测到处理: ${raw ?? '(无输出)'}`);
+    return null;
   }
   log(`--version → ${raw ?? '(无输出)'}`);
   return firstLine;

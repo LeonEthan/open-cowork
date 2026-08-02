@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FileChange } from '../../../../shared/api';
+// ticket #39（additive 独立行，并行票据零冲突合并约定）：git 操作区块类型
+import type { GitCompareFile, GitCompareResult, GitWorkingSummary } from '../../../../shared/api';
 import { WorktreePanel } from '../../components/WorktreePanel';
 import { useAppStore } from '../../stores/appStore';
 import { useChangesStore } from '../../stores/changes';
@@ -14,6 +16,9 @@ import '../../styles/changes.css';
  * - 文件级「接受/回滚」，已回滚显示「恢复」；顶部任务级「全部接受/全部回滚」
  *   （awaiting_review 态出现，完成后任务 → done）；
  * - 数据：main 侧 file_changes 表（turn_end 捕获落库），tasks:changed 广播驱动重拉。
+ * - ticket #39（Codex Environment 对齐）：tab 头部 git 操作区块——
+ *   分支行（分支 chip + upstream ↑↓）/ 提交 + 推送 / worktree 任务「与 base 对比」展开行；
+ *   无选中任务或非 git 目录整块不渲染。
  */
 
 const STATUS_LABELS: Record<FileChange['status'], string> = {
@@ -150,7 +155,7 @@ function ChangeRow({ change, selected, busy, onSelect, onAction }: RowProps): Re
               </button>
               <button
                 type="button"
-                className="icon-btn"
+                className="icon-btn btn-danger"
                 data-testid="change-rollback"
                 data-path={change.path}
                 disabled={busy}
@@ -175,6 +180,192 @@ function ChangeRow({ change, selected, busy, onSelect, onAction }: RowProps): Re
         </span>
       </div>
     </li>
+  );
+}
+
+// ── ticket #39：git 操作区块（分支行 / 提交推送 / 与 base 对比） ──────────
+
+const COMPARE_STATUS_LABELS: Record<GitCompareFile['status'], string> = {
+  added: '新增',
+  modified: '修改',
+  deleted: '删除',
+  renamed: '改名',
+};
+
+interface GitOpsPanelProps {
+  taskId: string;
+  /** worktree 任务才渲染「与 base 对比」行 */
+  useWorktree: boolean;
+  /** 提交/推送成功后让父级重拉 changes store */
+  onChanged: () => void;
+}
+
+function GitOpsPanel({ taskId, useWorktree, onChanged }: GitOpsPanelProps): React.JSX.Element | null {
+  const [summary, setSummary] = useState<GitWorkingSummary | null>(null);
+  const [commitMsg, setCommitMsg] = useState('');
+  const [opBusy, setOpBusy] = useState<'commit' | 'push' | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compare, setCompare] = useState<GitCompareResult | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+
+  const loadSummary = useCallback(async (): Promise<void> => {
+    const api = window.openCowork;
+    if (!api) return;
+    try {
+      setSummary(await api.git.workingSummary(taskId));
+    } catch {
+      setSummary(null); // 分支行拉取失败按不渲染处理（不阻断变更列表）
+    }
+  }, [taskId]);
+
+  // 选中任务变化：重拉分支行 + 收起重对比区块
+  useEffect(() => {
+    setErr(null);
+    setCommitMsg('');
+    setCompareOpen(false);
+    setCompare(null);
+    void loadSummary();
+  }, [loadSummary]);
+
+  const runOp = useCallback(
+    async (kind: 'commit' | 'push'): Promise<void> => {
+      const api = window.openCowork;
+      if (!api || opBusy) return; // busy 态防重
+      setOpBusy(kind);
+      setErr(null);
+      try {
+        if (kind === 'commit') {
+          await api.git.commitAll(taskId, commitMsg);
+          setCommitMsg(''); // 提交成功清空输入
+        } else {
+          await api.git.push(taskId);
+        }
+        await loadSummary(); // 分支行重拉（ahead/behind 变化）
+        onChanged(); // changes store 刷新
+      } catch (e) {
+        setErr(errMessage(e));
+      } finally {
+        setOpBusy(null);
+      }
+    },
+    [opBusy, taskId, commitMsg, loadSummary, onChanged],
+  );
+
+  const toggleCompare = useCallback((): void => {
+    const api = window.openCowork;
+    if (compareOpen) {
+      setCompareOpen(false);
+      return;
+    }
+    setCompareOpen(true);
+    if (!api || compare) return; // 已拉过不重复请求（折叠后展开复用缓存）
+    setCompareLoading(true);
+    setErr(null);
+    void api.git
+      .compareWithBase(taskId)
+      .then(setCompare)
+      .catch((e: unknown) => setErr(errMessage(e)))
+      .finally(() => setCompareLoading(false));
+  }, [compareOpen, compare, taskId]);
+
+  // 非 git 目录 / 拉取失败：整块不渲染
+  if (!summary?.isGitRepo) return null;
+
+  return (
+    <div className="git-ops" data-testid="git-ops-panel">
+      {/* 分支行：分支名 chip（mono）+ upstream 小字（null 不渲染） */}
+      <div className="git-branch-row" data-testid="git-branch-row">
+        <span className="git-branch-chip">{summary.branch ?? '未知分支'}</span>
+        {(summary.ahead !== null || summary.behind !== null) && (
+          <span className="git-upstream">
+            {summary.ahead !== null && ` ↑${summary.ahead}`}
+            {summary.behind !== null && ` ↓${summary.behind}`}
+          </span>
+        )}
+      </div>
+      {/* Commit or push 行 */}
+      <div className="git-commit-row">
+        <input
+          type="text"
+          className="git-commit-input"
+          data-testid="git-commit-input"
+          placeholder="提交信息…"
+          value={commitMsg}
+          disabled={opBusy !== null}
+          onChange={(e) => setCommitMsg(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && commitMsg.trim().length > 0) void runOp('commit');
+          }}
+        />
+        <button
+          type="button"
+          className="icon-btn btn-primary"
+          data-testid="git-commit-button"
+          disabled={opBusy !== null || commitMsg.trim().length === 0}
+          onClick={() => void runOp('commit')}
+        >
+          {opBusy === 'commit' ? '提交中…' : '提交'}
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          data-testid="git-push-button"
+          disabled={opBusy !== null}
+          onClick={() => void runOp('push')}
+        >
+          {opBusy === 'push' ? '推送中…' : '推送'}
+        </button>
+      </div>
+      {err && (
+        <p className="git-ops-error" role="alert" data-testid="git-ops-error">
+          {err}
+        </p>
+      )}
+      {/* Compare branch 行（仅 worktree 任务） */}
+      {useWorktree && (
+        <div className="git-compare">
+          <button
+            type="button"
+            className="git-compare-toggle"
+            data-testid="git-compare-toggle"
+            aria-expanded={compareOpen}
+            onClick={toggleCompare}
+          >
+            {compareOpen ? '▾' : '▸'} 与 base 对比
+          </button>
+          {compareOpen && (
+            <div className="git-compare-body">
+              {compareLoading && <p className="git-compare-meta">对比中…</p>}
+              {compare && !compare.supported && (
+                <p className="git-compare-meta">该任务没有可对比的 base。</p>
+              )}
+              {compare && compare.supported && (
+                <>
+                  <p className="git-compare-summary">
+                    base <span className="git-base-label">{compare.baseLabel}</span> ·{' '}
+                    {compare.files.length} 个文件 <span className="stat-add">+{compare.insertions}</span>{' '}
+                    <span className="stat-del">−{compare.deletions}</span>
+                  </p>
+                  {compare.files.length > 0 && (
+                    <ul className="git-compare-list" data-testid="git-compare-list">
+                      {compare.files.map((f) => (
+                        <li key={f.path} className="git-compare-item">
+                          <span className={`git-compare-status ${f.status}`}>
+                            {COMPARE_STATUS_LABELS[f.status]}
+                          </span>
+                          <span className="git-compare-path">{f.path}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -244,6 +435,12 @@ function ChangesTab(): React.JSX.Element {
 
   return (
     <div className="changes-panel" data-testid="changes-panel">
+      {/* ── ticket #39：git 操作区块（分支行 / 提交推送 / 与 base 对比）；非 git 目录内部返回 null ── */}
+      <GitOpsPanel
+        taskId={task.id}
+        useWorktree={task.use_worktree === 1}
+        onChanged={() => void refresh(task.id)}
+      />
       {/* ── ticket #25：worktree 任务的「回流到原目录 / 清理 worktree」任务级操作 ── */}
       {task.use_worktree === 1 && <WorktreePanel taskId={task.id} />}
       {task.status === 'awaiting_review' && (
@@ -254,7 +451,7 @@ function ChangesTab(): React.JSX.Element {
           <span className="changes-taskbar-actions">
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn btn-primary"
               data-testid="changes-accept-all"
               disabled={busy}
               onClick={() => void run((api) => api.changes.acceptAll(task.id))}
@@ -263,7 +460,7 @@ function ChangesTab(): React.JSX.Element {
             </button>
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn btn-danger"
               data-testid="changes-rollback-all"
               disabled={busy || pendingCount === 0}
               onClick={() => void run((api) => api.changes.rollbackAll(task.id))}

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PermissionMode, Workspace, WorkspaceWorktreeInfo } from '../../../shared/api';
 import { agentLabel } from '../lib/taskStatus';
-import { MODE_LABELS, MODE_NEXT, MODE_TITLES } from '../lib/permissionMode';
 import { useAgentsStore } from '../stores/agents';
 import { useAppStore } from '../stores/appStore';
 import { errMessage, useDataStore } from '../stores/data';
 import { useUiStore } from '../stores/ui';
 import { AgentPicker } from './pickers/AgentPicker';
+import { PermissionModePicker } from './pickers/PermissionModePicker';
 import { ProviderModelPicker } from './pickers/ProviderModelPicker';
 
 /**
@@ -31,116 +31,150 @@ import { ProviderModelPicker } from './pickers/ProviderModelPicker';
  * task-provider-select / task-model-select（弹出层内，e2e 经 picker-toggle 开启后访问）。
  */
 
-/** starter 卡片文案（2–4 张，§4；点击预填 composer 占位文案） */
-const STARTERS: ReadonlyArray<{ key: string; label: string; hint: string; prefill: string }> = [
+/** starter 卡片文案（2–4 张，§4；点击预填 composer 占位文案）
+ *  Codex 对齐（附录 B）：卡片补 icon——currentColor inline SVG，白名单色（--ink-2） */
+const STARTERS: ReadonlyArray<{
+  key: string;
+  label: string;
+  prefill: string;
+  icon: () => React.JSX.Element;
+}> = [
   {
     key: 'explore',
     label: '探索并理解代码',
-    hint: '梳理结构、关键模块与数据流',
     prefill: '探索这个代码库：梳理整体结构、关键模块与数据流，给我一份导览。',
+    icon: () => (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+        <path d="m10.8 5.2-1.4 4.2-4.2 1.4 1.4-4.2 4.2-1.4Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      </svg>
+    ),
   },
   {
     key: 'feature',
     label: '构建新功能',
-    hint: '从需求描述到落地实现',
     prefill: '构建一个新功能：',
+    icon: () => (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M9.5 2.5 13.5 6.5 6 14H2v-4l7.5-7.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        <path d="m8 4 4 4" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    ),
   },
   {
     key: 'fix',
     label: '修复问题',
-    hint: '定位根因并修复',
     prefill: '修复一个问题：',
+    icon: () => (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M10.5 2.5a3.5 3.5 0 0 0-4.6 4.3L2.5 10.2a1.6 1.6 0 1 0 2.3 2.3l3.4-3.4a3.5 3.5 0 0 0 4.3-4.6l-2.2 2.2-2-.5-.5-2 2.3-2.2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      </svg>
+    ),
   },
   {
     key: 'free',
     label: '自由任务',
-    hint: '直接描述你想做的事',
     prefill: '',
+    icon: () => (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M2.5 3.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H6l-3 3v-11Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      </svg>
+    ),
   },
 ];
 
 export function HomeView(): React.JSX.Element {
   const workspaces = useDataStore((s) => s.workspaces);
   const requestComposerFocus = useUiStore((s) => s.requestComposerFocus);
+  // Codex 对齐（附录 B）：侧栏 workspace 行选中态 —— hero 与 composer 跟随
+  const currentWorkspaceId = useAppStore((s) => s.currentWorkspaceId);
   const [workspaceId, setWorkspaceId] = useState('');
   const [text, setText] = useState('');
 
-  // workspace 列表变化（首个添加/移除）时保持有效选择
+  // workspace 列表变化（首个添加/移除）时保持有效选择；侧栏选中的 workspace 优先
   useEffect(() => {
+    if (currentWorkspaceId && workspaces.some((w) => w.id === currentWorkspaceId)) {
+      if (workspaceId !== currentWorkspaceId) setWorkspaceId(currentWorkspaceId);
+      return;
+    }
     if (!workspaces.some((w) => w.id === workspaceId)) {
       setWorkspaceId(workspaces[0]?.id ?? '');
     }
-  }, [workspaces, workspaceId]);
+  }, [workspaces, workspaceId, currentWorkspaceId]);
 
   const ws = workspaces.find((w) => w.id === workspaceId) ?? workspaces[0] ?? null;
 
   return (
     <div className="home-view" data-testid="home-view">
-      {workspaces.length === 0 || !ws ? (
-        <NoWorkspaceHero />
-      ) : (
-        <>
-          <div className="home-hero" data-testid="home-hero">
-            <div className="hero-logo" data-testid="hero-logo">
-              open-cowork
-            </div>
-            <h1 className="hero-question">想在「{ws.name}」里做点什么？</h1>
-            <div className="starter-grid">
-              {STARTERS.map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  className="starter-card"
-                  data-testid="starter-card"
-                  data-starter={s.key}
-                  onClick={() => {
-                    setText(s.prefill);
-                    requestComposerFocus();
-                  }}
-                >
-                  <span className="starter-label">{s.label}</span>
-                  <span className="starter-hint">{s.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="composer-dock">
-            <HomeComposer
-              workspaces={workspaces}
-              workspaceId={ws.id}
-              onWorkspaceChange={setWorkspaceId}
-              text={text}
-              onTextChange={setText}
-            />
-          </div>
-        </>
-      )}
+      {/* Codex 对齐（附录 B 复核第三轮）：无 workspace 时主页结构不变——hero +
+          starter 卡片 + composer 常驻；仅问句与 composer 上下文项退化（选择目录） */}
+      <div className="home-hero" data-testid="home-hero">
+        <HeroMark />
+        {ws ? (
+          <h1 className="hero-question">
+            想在 <span className="hero-ws">{ws.name}</span> 里做点什么？
+          </h1>
+        ) : (
+          <h1 className="hero-question">想做点什么？</h1>
+        )}
+        <div className="starter-grid">
+          {STARTERS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className="starter-card"
+              data-testid="starter-card"
+              data-starter={s.key}
+              onClick={() => {
+                setText(s.prefill);
+                requestComposerFocus();
+              }}
+            >
+              <span className="starter-icon" aria-hidden="true">
+                <s.icon />
+              </span>
+              <span className="starter-label">{s.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="composer-dock">
+        <HomeComposer
+          workspaces={workspaces}
+          workspaceId={ws?.id ?? ''}
+          onWorkspaceChange={(id) => {
+            setWorkspaceId(id);
+            // composer 内切换 workspace 同样回写侧栏选中态（附录 B 双向跟随）
+            useAppStore.getState().setCurrentWorkspaceId(id);
+          }}
+          text={text}
+          onTextChange={setText}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** 空态标记（Codex 对齐，附录 B 视觉复核）：rosette 徽章 + 终端字形（❯_），ink-3 单色线稿 */
+function HeroMark(): React.JSX.Element {
+  return (
+    <div className="hero-logo" data-testid="hero-logo">
+      <svg width="56" height="56" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <path
+          d="M59.0 32.0 L58.5 33.7 L57.1 35.3 L55.4 36.7 L54.2 38.0 L54.6 39.7 L55.4 41.7 L55.8 43.7 L55.4 45.5 L54.1 46.7 L52.1 47.4 L49.9 47.7 L48.3 48.3 L47.7 49.9 L47.4 52.1 L46.7 54.1 L45.5 55.4 L43.7 55.8 L41.7 55.4 L39.7 54.6 L38.0 54.2 L36.7 55.4 L35.3 57.1 L33.7 58.5 L32.0 59.0 L30.3 58.5 L28.7 57.1 L27.3 55.4 L26.0 54.2 L24.3 54.6 L22.3 55.4 L20.3 55.8 L18.5 55.4 L17.3 54.1 L16.6 52.1 L16.3 49.9 L15.7 48.3 L14.1 47.7 L11.9 47.4 L9.9 46.7 L8.6 45.5 L8.2 43.7 L8.6 41.7 L9.4 39.7 L9.8 38.0 L8.6 36.7 L6.9 35.3 L5.5 33.7 L5.0 32.0 L5.5 30.3 L6.9 28.7 L8.6 27.3 L9.8 26.0 L9.4 24.3 L8.6 22.3 L8.2 20.3 L8.6 18.5 L9.9 17.3 L11.9 16.6 L14.1 16.3 L15.7 15.7 L16.3 14.1 L16.6 11.9 L17.3 9.9 L18.5 8.6 L20.3 8.2 L22.3 8.6 L24.3 9.4 L26.0 9.8 L27.3 8.6 L28.7 6.9 L30.3 5.5 L32.0 5.0 L33.7 5.5 L35.3 6.9 L36.7 8.6 L38.0 9.8 L39.7 9.4 L41.7 8.6 L43.7 8.2 L45.5 8.6 L46.7 9.9 L47.4 11.9 L47.7 14.1 L48.3 15.7 L49.9 16.3 L52.1 16.6 L54.1 17.3 L55.4 18.5 L55.8 20.3 L55.4 22.3 L54.6 24.3 L54.2 26.0 L55.4 27.3 L57.1 28.7 L58.5 30.3 Z"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+        />
+        {/* 终端字形 ❯_ */}
+        <path d="m26 26 6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M35 39h8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
     </div>
   );
 }
 
 /** 无 workspace 的退化 hero：添加 workspace 引导（复用侧栏同一桥能力） */
-function NoWorkspaceHero(): React.JSX.Element {
-  const addWorkspaceViaDialog = useDataStore((s) => s.addWorkspaceViaDialog);
-  return (
-    <div className="home-hero" data-testid="home-hero">
-      <div className="hero-logo" data-testid="hero-logo">
-        open-cowork
-      </div>
-      <h1 className="hero-question">先添加一个本地目录作为 workspace</h1>
-      <p className="muted">agent 只在你添加的本地目录里工作——本地优先，无云端环境。</p>
-      <button
-        type="button"
-        className="icon-btn hero-add"
-        data-testid="hero-add-workspace"
-        onClick={() => void addWorkspaceViaDialog()}
-      >
-        添加 Workspace…
-      </button>
-    </div>
-  );
-}
-
 // ── 首页 composer（创建入口，create+start 一步到位） ──────────────────────
 
 function HomeComposer(props: {
@@ -152,6 +186,7 @@ function HomeComposer(props: {
 }): React.JSX.Element {
   const { workspaces, workspaceId, text } = props;
   const refreshAll = useDataStore((s) => s.refreshAll);
+  const addWorkspaceViaDialog = useDataStore((s) => s.addWorkspaceViaDialog);
   const setComposerNotice = useUiStore((s) => s.setComposerNotice);
   const composerFocusNonce = useUiStore((s) => s.composerFocusNonce);
 
@@ -187,11 +222,14 @@ function HomeComposer(props: {
   }, [agentsLoaded, agents, agentType]);
 
   // 选中 workspace 变化 → 探测 worktree 可用性（#25 同口径）；不可用时收回勾选
+  // Codex 对齐（附录 B）：同机拉取当前 git 分支（上下文行分支 chip；非 git 不渲染）
+  const [branch, setBranch] = useState<string | null>(null);
   useEffect(() => {
     const api = window.openCowork;
     if (!api || workspaceId.length === 0) {
       setWtInfo(null);
       setUseWorktree(false);
+      setBranch(null);
       return;
     }
     let cancelled = false;
@@ -199,6 +237,9 @@ function HomeComposer(props: {
       if (cancelled) return;
       setWtInfo(info);
       if (!info.isGitRepo || !info.hasCommits) setUseWorktree(false);
+    });
+    void api.workspaces.currentBranch(workspaceId).then((info) => {
+      if (!cancelled) setBranch(info.isGitRepo ? info.branch : null);
     });
     return () => {
       cancelled = true;
@@ -276,34 +317,75 @@ function HomeComposer(props: {
   return (
     <div className="composer" data-testid="composer">
       <div className="composer-box">
-        {/* 第一行·上下文行：workspace 切换 / Local 环境 / 原目录·worktree 切换 */}
+        {/* 第一行·上下文行（Codex 对齐，附录 B 视觉复核）：分段条——bg-soft 顶条内
+            icon+文字项（workspace / Local / 分支 / 原目录·worktree），无边框 chip */}
         <div className="composer-context">
-          <select
-            className="chip chip-select"
-            data-testid="composer-workspace-select"
-            value={workspaceId}
-            onChange={(e) => props.onWorkspaceChange(e.target.value)}
-          >
-            {workspaces.map((w) => (
-              <option key={w.id} value={w.id} title={w.path}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-          <span className="chip" data-testid="composer-env-chip" title="本地运行，无云端环境">
+          {/* Codex「Choose project」位：无 workspace 时上下文项 = 选择目录入口 */}
+          {workspaces.length === 0 ? (
+            <button
+              type="button"
+              className="context-item context-btn"
+              data-testid="composer-choose-project"
+              title="agent 只在你添加的本地目录里工作——本地优先，无云端环境"
+              onClick={() => void addWorkspaceViaDialog()}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 5.5 8 2l6 3.5v5L8 14l-6-3.5v-5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                <path d="M2 5.5 8 9l6-3.5M8 9v5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              </svg>
+              选择目录…
+            </button>
+          ) : (
+            <span className="context-item">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 5.5 8 2l6 3.5v5L8 14l-6-3.5v-5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                <path d="M2 5.5 8 9l6-3.5M8 9v5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              </svg>
+              <select
+                className="context-select"
+                data-testid="composer-workspace-select"
+                value={workspaceId}
+                onChange={(e) => props.onWorkspaceChange(e.target.value)}
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id} title={w.path}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </span>
+          )}
+          <span className="context-item" data-testid="composer-env-chip" title="本地运行，无云端环境">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M5 13.5h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
             Local
           </span>
-          <button
-            type="button"
-            className="chip chip-btn"
-            data-testid="composer-worktree-toggle"
-            aria-pressed={useWorktree}
-            disabled={!worktreeAvailable}
-            title={worktreeHint}
-            onClick={() => setUseWorktree((v) => !v)}
-          >
-            {useWorktree ? 'worktree 隔离' : '原目录'}
-          </button>
+          {/* Codex 对齐（附录 B）：当前 git 分支 chip（非 git workspace 不渲染） */}
+          {branch && (
+            <span className="context-item mono" data-testid="composer-branch-chip" title="当前 git 分支">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="4.5" cy="4" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <circle cx="11.5" cy="12" r="2" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M4.5 6v4a3 3 0 0 0 3 3h2" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+              {branch}
+            </span>
+          )}
+          {workspaces.length > 0 && (
+            <button
+              type="button"
+              className="context-item context-btn"
+              data-testid="composer-worktree-toggle"
+              aria-pressed={useWorktree}
+              disabled={!worktreeAvailable}
+              title={worktreeHint}
+              onClick={() => setUseWorktree((v) => !v)}
+            >
+              {useWorktree ? 'worktree 隔离' : '原目录'}
+            </button>
+          )}
         </div>
         {/* 第二行·输入区 */}
         <textarea
@@ -322,18 +404,9 @@ function HomeComposer(props: {
             }
           }}
         />
-        {/* 第三行·动作行：权限档位 chip ｜ 合并 picker + 发送键（右置） */}
+        {/* 第三行·动作行：权限档位 chip（弹层，§4 附录 B）｜ 合并 picker + 发送键（右置） */}
         <div className="composer-actions">
-          <button
-            type="button"
-            className="chip chip-btn"
-            data-testid="permission-mode-chip"
-            data-mode={mode}
-            title={MODE_TITLES[mode]}
-            onClick={() => setMode(MODE_NEXT[mode])}
-          >
-            ⚙ {MODE_LABELS[mode]}
-          </button>
+          <PermissionModePicker mode={mode} onChange={setMode} />
           <span className="composer-actions-flex" />
           <div className="agent-model-picker">
             <button
@@ -359,12 +432,15 @@ function HomeComposer(props: {
           </div>
           <button
             type="button"
-            className="icon-btn"
+            className="send-circle"
             data-testid="send-button"
             disabled={!canSend}
+            title={busy ? '创建中…' : '发送'}
             onClick={() => void send()}
           >
-            {busy ? '创建中…' : '发送'}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 13V3m0 0-4 4m4-4 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
       </div>

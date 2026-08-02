@@ -100,6 +100,17 @@ export function describeTaskUsage(t: UsageTotals): string {
   return text;
 }
 
+/** 汇总 chip 短正文（侧栏 title 行右端用，Codex「2h ago」位）：仅 token 量（省单位
+ *  省横向空间，240px 侧栏里 tokens 一词值 ~50px）+ 折算金额；订阅标注归 tooltip */
+export function describeTaskUsageShort(t: UsageTotals): string {
+  let text = formatTokens(t.inputTokens + t.outputTokens);
+  if (t.hasPriced) {
+    const cost = formatCost(t.costUsd);
+    if (cost !== null) text += ` · ${cost}`;
+  }
+  return text;
+}
+
 /** 汇总 chip tooltip（完整口径：缓存量 + 折算说明） */
 export function describeTaskUsageTitle(t: UsageTotals): string {
   const parts = [

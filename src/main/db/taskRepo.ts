@@ -59,14 +59,15 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
     base_sha: null,
     session_id: null,
     fail_reason: null,
+    pinned: 0,
     created_at: now,
     updated_at: now,
   };
   db.prepare(
     `INSERT INTO tasks (id, workspace_id, title, prompt, agent_type, provider_id, model,
                         permission_mode, status, use_worktree, worktree_path, base_sha,
-                        session_id, fail_reason, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        session_id, fail_reason, pinned, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     task.id,
     task.workspace_id,
@@ -82,6 +83,7 @@ export function create(db: Database, input: CreateTaskInput, now: number = Date.
     task.base_sha,
     task.session_id,
     task.fail_reason,
+    task.pinned,
     task.created_at,
     task.updated_at,
   );
@@ -157,6 +159,65 @@ export function setPermissionMode(
   if (!task) throw new Error(`任务不存在: ${id}`);
   db.prepare('UPDATE tasks SET permission_mode = ?, updated_at = ? WHERE id = ?').run(mode, now, id);
   return { ...task, permission_mode: mode, updated_at: now };
+}
+
+// ── 二期 Pinned 置顶（additive；不涉状态机，任何状态下可切换） ──────────────
+
+/** 置顶/取消置顶（pinned 0/1；任务不存在抛错）。返回更新后的任务行 */
+export function setPinned(
+  db: Database,
+  id: string,
+  pinned: boolean,
+  now: number = Date.now(),
+): Task {
+  const task = getById(db, id);
+  if (!task) throw new Error(`任务不存在: ${id}`);
+  db.prepare('UPDATE tasks SET pinned = ?, updated_at = ? WHERE id = ?').run(
+    pinned ? 1 : 0,
+    now,
+    id,
+  );
+  return { ...task, pinned: pinned ? 1 : 0, updated_at: now };
+}
+
+// ── Codex 对齐：任务重命名与删除（additive；不涉状态机） ────────────────────
+
+/** 重命名任务（trim 后非空校验；任务不存在抛错；updated_at 刷新）。返回更新后的任务行 */
+export function rename(
+  db: Database,
+  id: string,
+  title: string,
+  now: number = Date.now(),
+): Task {
+  const trimmed = title.trim();
+  if (trimmed.length === 0) throw new Error('任务标题不能为空');
+  const task = getById(db, id);
+  if (!task) throw new Error(`任务不存在: ${id}`);
+  db.prepare('UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?').run(trimmed, now, id);
+  return { ...task, title: trimmed, updated_at: now };
+}
+
+/**
+ * 删除任务：schema 未声明 ON DELETE CASCADE（迁移均为裸 REFERENCES），
+ * 故与 workspaceRepo.remove 同口径——子表（按依赖逆序）显式清理后删任务行，单事务。
+ * （messages 删除经 messages_ad 触发器自动同步 FTS5。）
+ */
+export function remove(db: Database, id: string): void {
+  const task = getById(db, id);
+  if (!task) throw new Error(`任务不存在: ${id}`);
+  db.transaction(() => {
+    for (const table of [
+      'usage_records',
+      'file_changes',
+      'approvals',
+      'tool_calls',
+      'messages',
+      'turns',
+    ] as const) {
+      db.prepare(`DELETE FROM ${table} WHERE task_id = ?`).run(id);
+    }
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  })();
 }
 
 // ── ticket #25：worktree 隔离（additive；不涉状态机） ─────────────────────

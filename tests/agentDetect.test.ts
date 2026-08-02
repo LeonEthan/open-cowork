@@ -141,6 +141,19 @@ describe('完整条目探测（probeEntry，stub 版本探测）', () => {
     expect(d.authenticated).toBe(false);
   });
 
+  it('首行不含数字 = 非版本串（banner/JSONL），按未探测到处理（附录 B 审计 P2）', async () => {
+    const d = await probeEntry(entry('codex'), {
+      env: { PATH: '/x' },
+      home: null,
+      isExecutable: () => true,
+      // fake harness 式输出：JSONL init 行（内含数字字段，单靠数字判据拦不住）
+      run: async () => ({ code: 0, stdout: '{"type":"system","subtype":"init","version":"fake-0.0.0"}\n', stderr: '' }),
+      log: () => {},
+    });
+    expect(d.installed).toBe(true);
+    expect(d.version).toBeNull();
+  });
+
   it('未安装：version/authenticated 均为 null，不跑版本探测', async () => {
     let ran = false;
     const d = await probeEntry(entry('opencode'), {

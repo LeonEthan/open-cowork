@@ -4,8 +4,8 @@ import type { ComponentType } from 'react';
  * renderer 侧扩展点统一注册表：新增文件即注册、零编辑共享文件。
  *
  * 三个扩展面（后续票据在并行 worktree 中各自新增文件，互不冲突）：
- *   extensions/inspector-tabs/     检查栏 tab（DESIGN.md §1：变更/终端等；
- *                                  文件复查并入变更 tab，不单设文件 tab）
+ *   extensions/inspector-tabs/     检查栏 tab（DESIGN.md §1.2 修订：变更单栏，单 tab 时 tab 条退场；
+ *                                  文件复查并入变更 tab，不单设文件 tab；终端已迁底部抽屉）
  *   extensions/settings-sections/  设置页区块
  *   extensions/sidebar-sections/   任务侧栏区块
  *

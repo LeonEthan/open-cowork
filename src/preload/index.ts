@@ -38,12 +38,16 @@ const api: OpenCoworkApi = {
     pickAndAdd: () => ipcRenderer.invoke('workspaces:pick-and-add'),
     addByPath: (dirPath: string) => ipcRenderer.invoke('workspaces:add-by-path', dirPath),
     remove: (id: string) => ipcRenderer.invoke('workspaces:remove', id),
+    currentBranch: (id: string) => ipcRenderer.invoke('workspaces:current-branch', id),
   },
   tasks: {
     list: () => ipcRenderer.invoke('tasks:list'),
     create: (input: CreateTaskInput) => ipcRenderer.invoke('tasks:create', input),
     updateStatus: (id: string, status: TaskStatus) =>
       ipcRenderer.invoke('tasks:update-status', id, status),
+    setPinned: (id: string, pinned: boolean) => ipcRenderer.invoke('tasks:set-pinned', id, pinned),
+    rename: (id: string, title: string) => ipcRenderer.invoke('tasks:rename', id, title),
+    remove: (id: string) => ipcRenderer.invoke('tasks:remove', id),
   },
   onTasksChanged: (cb: () => void) => {
     const listener = (): void => cb();
@@ -193,6 +197,23 @@ const api: OpenCoworkApi = {
     };
   },
   // ── ticket #38 end ────────────────────────────────────────────────────
+
+  // ── Codex 对齐（additive）：系统 shell 集成 ───────────────────────────
+  shell: {
+    showInFolder: (path: string) => ipcRenderer.invoke('shell:show-in-folder', path),
+    openPath: (path: string) => ipcRenderer.invoke('shell:open-path', path),
+  },
+  // ── Codex 对齐 end ────────────────────────────────────────────────────
+
+  // ── ticket #39：检查栏 git 操作（Codex Environment 对齐） ─────────────
+  git: {
+    workingSummary: (taskId: string) => ipcRenderer.invoke('git:working-summary', taskId),
+    commitAll: (taskId: string, message: string) =>
+      ipcRenderer.invoke('git:commit-all', taskId, message),
+    push: (taskId: string) => ipcRenderer.invoke('git:push', taskId),
+    compareWithBase: (taskId: string) => ipcRenderer.invoke('git:compare-with-base', taskId),
+  },
+  // ── ticket #39 end ────────────────────────────────────────────────────
 };
 
 contextBridge.exposeInMainWorld('openCowork', api);

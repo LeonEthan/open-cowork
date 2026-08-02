@@ -14,11 +14,13 @@ import {
   backflow,
   cleanupWorktree,
   createTaskWorktree,
+  currentBranch,
   workspaceWorktreeInfo,
   worktreeBranch,
   worktreePathFor,
   worktreeStatus,
 } from '../src/main/worktree/worktree';
+import type { GitExec } from '../src/main/worktree/worktree';
 
 /**
  * worktree 隔离与回流（ticket #25 全 vitest）：
@@ -400,5 +402,51 @@ describe('手动清理', () => {
     const plain = setup(root, { useWorktree: false });
     expect(() => backflow(plain.db, plain.task.id)).toThrow(/未启用 worktree/);
     expect(cleanupWorktree(plain.db, plain.dataDir, plain.task.id)).toEqual({ ok: true });
+  });
+});
+
+// Codex 对齐（additive）：workspaces:current-branch 的纯逻辑——注入 exec，不碰真 git
+describe('currentBranch（注入 exec 的纯逻辑）', () => {
+  /** 按 args 首元素分发的假 git；未命中抛错模拟命令失败 */
+  const fakeGit = (out: Partial<Record<'rev-parse' | 'symbolic-ref', string>>): GitExec => {
+    return (_cwd, args) => {
+      const key = args[0] as 'rev-parse' | 'symbolic-ref';
+      const v = out[key];
+      if (v === undefined) throw new Error(`fatal: ${args.join(' ')}`);
+      return v;
+    };
+  };
+
+  it('正常分支：symbolic-ref 命中返回分支名', () => {
+    expect(
+      currentBranch('/repo', fakeGit({ 'rev-parse': 'true\n', 'symbolic-ref': 'main\n' })),
+    ).toEqual({ isGitRepo: true, branch: 'main' });
+  });
+
+  it('非 git 目录：rev-parse 非 true → isGitRepo=false', () => {
+    expect(currentBranch('/tmp', fakeGit({ 'rev-parse': 'false\n' }))).toEqual({
+      isGitRepo: false,
+      branch: null,
+    });
+  });
+
+  it('git 命令失败一律不抛：返回 isGitRepo=false', () => {
+    expect(currentBranch('/nowhere', fakeGit({}))).toEqual({ isGitRepo: false, branch: null });
+  });
+
+  it('detached HEAD：symbolic-ref 失败 → branch 给短 SHA', () => {
+    // rev-parse 需同时应答 --is-inside-work-tree 与 --short HEAD
+    const exec: GitExec = (_cwd, args) => {
+      if (args[0] === 'rev-parse' && args.includes('--is-inside-work-tree')) return 'true\n';
+      if (args[0] === 'rev-parse' && args.includes('--short')) return 'abc1234\n';
+      throw new Error('fatal: ref HEAD is not a symbolic ref');
+    };
+    expect(currentBranch('/repo', exec)).toEqual({ isGitRepo: true, branch: 'abc1234' });
+  });
+
+  it('真 git 冒烟：临时仓在 main 分支；普通目录非 git', () => {
+    const root = makeGitWorkspace();
+    expect(currentBranch(root)).toEqual({ isGitRepo: true, branch: 'main' });
+    expect(currentBranch(tmp('oc-nonrepo-'))).toEqual({ isGitRepo: false, branch: null });
   });
 });

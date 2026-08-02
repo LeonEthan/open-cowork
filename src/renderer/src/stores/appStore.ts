@@ -10,10 +10,15 @@ import { create } from 'zustand';
 interface AppState {
   /** 当前选中任务；null = 未选中（文档流保持空态） */
   currentTaskId: string | null;
+  /** Codex 对齐改造（附录 B，additive）：当前选中 workspace——侧栏 workspace 行选中态与首页 hero 跟随 */
+  currentWorkspaceId: string | null;
   setCurrentTaskId: (id: string | null) => void;
+  setCurrentWorkspaceId: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()((set) => ({
   currentTaskId: null,
+  currentWorkspaceId: null,
   setCurrentTaskId: (currentTaskId) => set({ currentTaskId }),
+  setCurrentWorkspaceId: (currentWorkspaceId) => set({ currentWorkspaceId }),
 }));

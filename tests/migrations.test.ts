@@ -43,6 +43,7 @@ describe('migrations additive（#18）', () => {
         (c) => c.name,
       );
       expect(cols).toContain('session_id');
+      expect(cols).toContain('pinned'); // 008（二期 Pinned）：additive 带默认值列
 
       // 存量行原样保留，session_id 为 NULL
       const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get('t1') as Record<
@@ -52,6 +53,7 @@ describe('migrations additive（#18）', () => {
       expect(row.title).toBe('存量任务');
       expect(row.status).toBe('ready');
       expect(row.session_id).toBeNull();
+      expect(row.pinned).toBe(0); // 存量行升级后默认未置顶
     } finally {
       db.close();
     }

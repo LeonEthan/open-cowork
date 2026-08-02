@@ -89,6 +89,41 @@ export function workspaceWorktreeInfo(
   return { isGitRepo: gitRepo, hasCommits: gitRepo ? revParseHead(path) !== null : false };
 }
 
+/** git 执行器签名（currentBranch 可注入，测试不碰真 git） */
+export type GitExec = (cwd: string, args: string[]) => string;
+
+/**
+ * 当前分支查询（workspaces:current-branch 通道的纯逻辑）：
+ * 非 git 目录 / git 命令失败一律不抛——返回 isGitRepo=false；
+ * detached HEAD 时 branch 给短 SHA；空库（无提交）symbolic-ref 仍给出分支名。
+ */
+export function currentBranch(
+  cwd: string,
+  execGit: GitExec = git,
+): { isGitRepo: boolean; branch: string | null } {
+  try {
+    if (execGit(cwd, ['rev-parse', '--is-inside-work-tree']).trim() !== 'true') {
+      return { isGitRepo: false, branch: null };
+    }
+  } catch {
+    return { isGitRepo: false, branch: null };
+  }
+  let branch = '';
+  try {
+    branch = execGit(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).trim();
+  } catch {
+    // detached HEAD：symbolic-ref 失败，落到短 SHA
+  }
+  if (branch.length > 0) return { isGitRepo: true, branch };
+  try {
+    const sha = execGit(cwd, ['rev-parse', '--short', 'HEAD']).trim();
+    return { isGitRepo: true, branch: sha.length > 0 ? sha : null };
+  } catch {
+    // 极少见（如 HEAD 损坏）：仍算 git 仓，但分支未知
+    return { isGitRepo: true, branch: null };
+  }
+}
+
 /**
  * 创建 worktree 并 pin base SHA（任务入库后由 tasks 服务调用；幂等——
  * worktree_path 已落库且目录仍在时直接返回现状）。

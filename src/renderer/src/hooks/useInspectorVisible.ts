@@ -1,11 +1,11 @@
 import { useAppStore } from '../stores/appStore';
 import { useChangesStore } from '../stores/changes';
-import { resolveInspectorVisible, terminalActiveFor, useUiStore } from '../stores/ui';
+import { resolveInspectorVisible, useUiStore } from '../stores/ui';
 
 /**
- * 检查栏上下文化可见性（ticket #34，DESIGN.md §1.2）：
- * 手动覆盖（持久化偏好）优先；自动规则 = 当前上下文终端活跃或选中任务已有变更。
- * ticket #38：终端活跃 = 当前上下文（taskId 或 global）存在存活 pty 会话（terminalActiveFor 派生）。
+ * 检查栏上下文化可见性（ticket #34，DESIGN.md §1.2；2026-08 修订：终端迁出为底部抽屉，
+ * 检查栏收窄为变更单栏）：手动覆盖（持久化偏好）优先；自动规则 = 选中任务已有变更。
+ * 终端活跃不再拉起检查栏——其可见性归终端抽屉派生（useTerminalDrawerVisible）。
  */
 export function useInspectorVisible(): boolean {
   const currentTaskId = useAppStore((s) => s.currentTaskId);
@@ -13,11 +13,9 @@ export function useInspectorVisible(): boolean {
     currentTaskId ? (s.byTask[currentTaskId]?.length ?? 0) > 0 : false,
   );
   const override = useUiStore((s) => s.inspectorOverride);
-  const liveTerminals = useUiStore((s) => s.liveTerminals);
   return resolveInspectorVisible(override, {
     hasTask: currentTaskId !== null,
     hasChanges,
-    terminalActive: terminalActiveFor(liveTerminals, currentTaskId),
   });
 }
 
@@ -31,6 +29,5 @@ export function peekInspectorVisible(): boolean {
   return resolveInspectorVisible(ui.inspectorOverride, {
     hasTask: taskId !== null,
     hasChanges,
-    terminalActive: terminalActiveFor(ui.liveTerminals, taskId),
   });
 }

@@ -22,6 +22,8 @@ interface DataState {
   addWorkspaceViaDialog: () => Promise<void>;
   addWorkspaceByPath: (dirPath: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
+  /** 二期 Pinned：置顶/取消置顶任务（取当前 pinned 反值） */
+  toggleTaskPinned: (task: TaskListItem) => Promise<void>;
 }
 
 /** ticket #36（additive 导出）：IPC 错误消息剥壳——首页 composer 建任务流程同口径复用 */
@@ -81,6 +83,18 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (!api) return;
     try {
       await api.workspaces.remove(id);
+      set({ lastError: null });
+    } catch (e) {
+      set({ lastError: errMessage(e) });
+    }
+    await get().refreshAll();
+  },
+
+  toggleTaskPinned: async (task) => {
+    const api = window.openCowork;
+    if (!api) return;
+    try {
+      await api.tasks.setPinned(task.id, task.pinned !== 1);
       set({ lastError: null });
     } catch (e) {
       set({ lastError: errMessage(e) });

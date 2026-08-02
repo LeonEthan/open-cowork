@@ -107,10 +107,11 @@ test('pi 一轮对话：fake 脚本驱动 → 文档流渲染齐全 → awaiting
 
     // 工具渲染用例在放权面跑：默认「自动」档无命中规则时等价只读面，
     // bash 会被静态策略（含纵深防御）拦截——该路径由 contract 用例覆盖。
-    // ticket #36：发送即开跑——档位在首页 composer 上发送前设定（默认 auto → 点一次到放权）
+    // ticket #36：发送即开跑——档位在首页 composer 上发送前设定（默认 auto → 弹层选放权）
     const modeChip = win.getByTestId('permission-mode-chip');
     await expect(modeChip).toHaveAttribute('data-mode', 'auto');
     await modeChip.click();
+    await win.locator('[data-testid="permission-mode-option"][data-mode="full"]').click();
     await expect(modeChip).toHaveAttribute('data-mode', 'full');
 
     await sendComposerTask(win);
@@ -166,13 +167,12 @@ test('只读档：pi 启动旗标含禁写语义（fake 启动回显断言 --too
     const win = await app.firstWindow();
     await preparePiComposerTask(win, wsDir, '只读档巡检');
 
-    // 默认「自动」档 → 权限 chip 循环两次到「只读」（auto → full → readonly）；
+    // 默认「自动」档 → 权限 chip 弹层直选「只读」（附录 B：循环切换已改 radio 弹层）；
     // ticket #36：发送即开跑——档位在首页 composer 上发送前设定，启动旗标随首轮下发
     const modeChip = win.getByTestId('permission-mode-chip');
     await expect(modeChip).toHaveAttribute('data-mode', 'auto');
     await modeChip.click();
-    await expect(modeChip).toHaveAttribute('data-mode', 'full');
-    await modeChip.click();
+    await win.locator('[data-testid="permission-mode-option"][data-mode="readonly"]').click();
     await expect(modeChip).toHaveAttribute('data-mode', 'readonly');
 
     await sendComposerTask(win);

@@ -103,7 +103,7 @@ test('① 带价目一轮对话：轮次灰字 + 任务 chip 数值与 models.de
     await expect(win.getByTestId('turn-usage')).toHaveAttribute('data-pending', 'false');
 
     // 侧栏任务 chip：token 总量 + 折算金额
-    await expect(win.getByTestId('task-usage-chip')).toHaveText('12.0k tokens · $0.06');
+    await expect(win.getByTestId('task-usage-chip')).toHaveText('12.0k · $0.06');
 
     // 水位环出现且未警告（(10000+800)/200000 = 5.4%）
     await expect(win.getByTestId('context-ring')).toBeVisible();
@@ -148,8 +148,9 @@ test('② 订阅途径 + 大 inputTokens：灰字标「仅供参考」，水位�
       '170.0k in / 500 out · 订阅制·费用仅供参考',
     );
 
-    // 任务 chip：订阅标注
-    await expect(win.getByTestId('task-usage-chip')).toHaveText('170.5k tokens · 订阅·仅供参考');
+    // 任务 chip：短正文（附录 B 审计 P0 行高收口）；订阅标注归 tooltip
+    await expect(win.getByTestId('task-usage-chip')).toHaveText('170.5k');
+    await expect(win.getByTestId('task-usage-chip')).toHaveAttribute('title', /含订阅制用量，费用仅供参考/);
 
     // 水位环 >80%：警告态 + 压缩建议文案
     await expect(win.getByTestId('context-ring')).toHaveAttribute('data-warn', 'true');

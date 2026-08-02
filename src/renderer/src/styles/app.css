@@ -31,6 +31,17 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+/* 按钮分级（附录 B 审计 P1）：主行动 ink 底反白 / 破坏行动 hover 红——配方与审批键一致 */
+.icon-btn.btn-primary,
+.icon-btn.btn-primary:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.icon-btn.btn-danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 /* ── 三栏容器 ──────────────────────────── */
 .main {
@@ -38,6 +49,21 @@
   display: flex;
   min-height: 0;
   overflow: hidden;
+}
+
+/* 中央列（§1.2 修订，附录 B）：上 = 文档流 + 检查栏横排（flex:1），下 = 终端抽屉横贯底部 */
+.center-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.center-row {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* 任务侧栏（240px，可折叠：负 margin 实现 slide）。
@@ -230,12 +256,53 @@
   flex: none;
   margin-top: 6px;
 }
+/* 二期 Pinned：任务行外壳（选中按钮 + hover 露出的置顶开关）；
+   开关约定与 .ws-remove 相同——hover/focus-visible 露出，pinned 态常显 */
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.task-row .task-item {
+  flex: 1;
+  min-width: 0;
+}
+.task-pin {
+  flex: none;
+  margin-top: 5px;
+  opacity: 0;
+}
+.task-row:hover .task-pin,
+.task-pin:focus-visible,
+.task-pin[aria-pressed='true'] {
+  opacity: 1;
+}
+/* 附录 B 审计 P1：置顶开关 ghost 化——状态标记不占 accent（与 #37 终审同裁决：
+   accent 为焦点/链接专用信号）；无边框盒，pressed 态仅 ink-2 着色 */
+.task-pin,
+.task-pin:hover,
+.task-pin[aria-pressed='true'],
+.task-pin[aria-pressed='true']:hover {
+  border-color: transparent;
+}
+.task-pin[aria-pressed='true'] {
+  color: var(--ink-2);
+}
 .task-text {
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
+/* title 行：标题 + 右端用量 chip（附录 B 审计 P0，Codex recents「2h ago」位） */
+.task-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 .task-title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   color: var(--ink);
   overflow: hidden;
@@ -275,13 +342,95 @@ button:disabled {
   color: var(--ink);
 }
 
-/* ── ticket #28: 内置终端 tab ─────────────────────────── */
-/* 终端占满检查栏内容区：常规 12px 内边距让给 xterm 自管理（fit 按容器尺寸换算行列） */
-.inspector-body:has(> .terminal-host) {
-  padding: 0;
-  overflow: hidden;
+/* ── ticket #28: 内置终端（§1.2 修订：底部抽屉）────────────── */
+/* 抽屉横贯中央列底部：border-top 分层（零阴影 §3），背景 --bg；出现走 slide（§5 ≤220ms） */
+.terminal-drawer {
+  flex: none;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  animation: terminal-drawer-slide-in 200ms ease;
+}
+@keyframes terminal-drawer-slide-in {
+  from {
+    transform: translateY(24px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+/* 顶边拖拽把手（4px 高，row-resize；命中区交给光标语义，不画装饰线） */
+.terminal-drawer-grip {
+  flex: none;
+  height: 4px;
+  cursor: row-resize;
+}
+/* tab 条：行高 32px；tab = 12.5px 文字（§3 元信息档），激活态 --bg-pill（§1.2 修订启用） */
+.terminal-drawer-tabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 8px;
+}
+.terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-1);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.terminal-tab:hover {
+  color: var(--ink);
+}
+.terminal-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--bg-pill);
+}
+.terminal-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  line-height: 1;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.terminal-tab-close:hover {
+  color: var(--ink);
+}
+.terminal-drawer-spacer {
+  flex: 1;
+}
+/* tab 条尾部动作（+ 新建 / ✕ 隐藏）：小图标档，与 tab 同字号族 */
+.terminal-drawer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-1);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.terminal-drawer-action:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-pill);
+}
+/* 终端体占满抽屉余高：内边距让给 xterm 自管理（fit 按容器尺寸换算行列） */
+.terminal-drawer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .terminal-host {
   flex: 1;
@@ -308,9 +457,13 @@ button:disabled {
   margin: 0 0 32px;
 }
 
-/* 用户消息：bg-soft 底 + 边框的轻包裹（文档流中区分说话人，不靠颜色） */
+/* 用户消息：右对齐灰 pill（Codex 对齐附录 B / §3——与 assistant 文档流左右分轨，
+   bg-soft 底 + 边框，不靠颜色区分说话人） */
 .msg-user {
-  padding: 10px 14px;
+  margin-left: auto;
+  max-width: 70%;
+  width: fit-content;
+  padding: 6px 14px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
@@ -586,9 +739,9 @@ button:disabled {
   z-index: 30;
 }
 
-/* 侧栏顶端为红绿灯预留安全区（追加覆盖，不改原侧栏规则块） */
+/* 品牌行占据侧栏顶端（附录 B §1.3 第 0 段；红绿灯安全区由其左留白承担） */
 .sidebar .pane-body {
-  padding-top: 40px;
+  padding-top: 4px;
 }
 
 /* 折叠开关小图标行：内容区左上角（§1.1），吸顶常驻不随滚动消失；
@@ -648,13 +801,12 @@ button:disabled {
     transform: translateX(0);
   }
 }
-/* 内容区右上角检查栏开关（小图标；快捷键 ⌘J，见 title 提示） */
-.inspector-toggle {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  /* merge #33+#34：须高于 .content-controls（z-index 20 吸顶拖拽行），否则被拦截点击 */
-  z-index: 21;
+/* 内容区右上角检查栏开关（小图标；快捷键 ⌘J，见 title 提示）——
+   宿主流：ContentControls sticky 条右端（旧 absolute 方案随 .content 滚动被顶出视口） */
+.content-controls .inspector-toggle {
+  position: relative; /* .inspector-badge 状态点的锚点 */
+  margin-left: auto;
+  margin-right: 12px;
 }
 /* 变更 tab 新内容轻提示：状态点级别（accent，不抢夺展开，§5 克制） */
 .inspector-badge {
@@ -729,12 +881,6 @@ button:disabled {
   padding: 5px 8px;
   border-radius: var(--radius-1);
   text-align: left;
-}
-.ws-chevron {
-  flex: none;
-  width: 10px;
-  font-size: 10.5px; /* §3 徽标档下限（ticket #37 终审：10px 跌出具名档位） */
-  color: var(--ink-2);
 }
 .ws-icon {
   flex: none;
@@ -969,3 +1115,488 @@ button:disabled {
   margin-top: 8px;
 }
 /* ── ticket #36 end ─────────────────────────────────────── */
+
+/* ── Codex 对齐改造（附录 B，2026-08）─────────────────────────────
+   侧栏五段 IA / 权限弹层 / 消息操作行 / Recents；全部引用 token，零阴影 */
+
+/* 品牌行（§1.3 第 0 段）：字标 + 搜索 + 通知；与红绿灯同行，左留白避让，行为拖拽区 */
+.sidebar-brand-wrap {
+  position: relative;
+  flex: none;
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px 0 80px;
+  -webkit-app-region: drag;
+}
+.sidebar-brand .brand-word {
+  font-size: var(--font-size-ui);
+  font-weight: 650;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.sidebar-brand .brand-icon {
+  border-color: transparent;
+  -webkit-app-region: no-drag;
+}
+/* 待办通知状态点（语义警告色，白名单；复用 inspector-badge 形态） */
+.notice-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+}
+.sidebar-brand .brand-icon {
+  position: relative;
+}
+
+/* 搜索过滤输入（品牌行下，就地过滤任务树） */
+.sidebar-search {
+  padding: 0 12px 8px;
+}
+.sidebar-search-input {
+  width: 100%;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  outline: none;
+}
+.sidebar-search-input:focus {
+  border-color: var(--ink-3);
+}
+
+/* 待办通知弹层（本地待办聚合；边框分层，浮层级——允许阴影豁免外以边框为主） */
+.notice-popover {
+  position: absolute;
+  top: 42px;
+  right: 8px;
+  left: 8px;
+  z-index: 40;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.notice-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+.notice-empty {
+  margin: 4px 2px 6px;
+  font-size: 12.5px;
+}
+.notice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  color: var(--ink);
+}
+.notice-item:hover {
+  background: color-mix(in srgb, var(--bg-pill) 50%, var(--bg-soft));
+}
+.notice-item .status-dot {
+  flex: none;
+  margin-top: 6px;
+}
+.notice-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.notice-item-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notice-item-meta {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.ws-toggle[aria-current='true'] {
+  background: var(--bg-pill);
+  border-radius: var(--radius-1);
+}
+
+/* Recents 分组（§1.3 第 3 段） */
+.recents-group {
+  margin-top: 12px;
+}
+.recents-more {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* starter 卡片 icon（§4 功能件；currentColor 白名单色） */
+.starter-icon {
+  color: var(--ink-2);
+  display: inline-flex;
+  margin-bottom: 2px;
+}
+
+/* 权限档位弹层（§4 附录 B；composer 动作行内向上弹出） */
+.permission-picker {
+  position: relative;
+}
+.permission-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: 260px;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.permission-popover-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+.permission-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  color: var(--ink);
+}
+.permission-option:hover {
+  background: color-mix(in srgb, var(--ink-3) 14%, var(--bg));
+}
+.permission-option-check {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+  color: var(--accent);
+}
+.permission-option-text {
+  display: flex;
+  flex-direction: column;
+}
+.permission-option-label {
+  font-size: 13px;
+}
+.permission-option-desc {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* assistant 消息操作行（hover 露出；仅 copy——附录 B） */
+.msg-assistant {
+  position: relative;
+}
+.msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+}
+.msg-assistant:hover .msg-actions,
+.msg-actions:focus-within {
+  opacity: 1;
+}
+.msg-copy {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  color: var(--ink-2);
+  border-color: transparent;
+}
+
+/* ── P1：会话信息架构（附录 B）────────────────────────────────── */
+
+/* 会话标题行：标题 + 状态行（左）｜ Open in + … 菜单（右） */
+.task-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.task-header-main {
+  flex: 1;
+  min-width: 0;
+}
+.task-header-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+}
+.menu-anchor {
+  position: relative;
+}
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.menu-item:hover {
+  background: color-mix(in srgb, var(--ink-3) 14%, var(--bg));
+}
+.menu-item-danger {
+  color: var(--danger);
+}
+.menu-item-danger.confirming {
+  font-weight: 650;
+}
+.task-rename-input {
+  font: inherit;
+  font-size: 24px;
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 0 8px;
+  margin: 0 0 4px;
+  width: 100%;
+  outline: none;
+}
+.task-rename-input:focus {
+  border-color: var(--ink-3);
+}
+
+/* 按轮工作摘要行（details 折叠；摘要行小灰字 + 左边线体，与思考折叠同族 §4） */
+.workgroup > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  user-select: none;
+}
+.workgroup > summary::-webkit-details-marker {
+  display: none;
+}
+.workgroup > summary::before {
+  content: '▸';
+  font-size: 10px;
+}
+.workgroup[open] > summary::before {
+  content: '▾';
+}
+.workgroup-stat {
+  color: var(--ink-3);
+}
+.workgroup-body {
+  margin: 6px 0 2px 4px;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workgroup-aggregate {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* ── Codex 视觉复核（附录 B 第二轮，2026-08）─────────────────────
+   侧栏 chrome strip / 分段条 composer / 圆形发送键 / rosette hero / 分组小灰标签 */
+
+/* 侧栏顶 strip：红绿灯同行右侧（padding-left 避让 88px 安全区），行 = 拖拽区 */
+.sidebar-chrome {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px 0 80px;
+  flex: none;
+  -webkit-app-region: drag;
+}
+.sidebar-chrome .chrome-btn {
+  border-color: transparent;
+  -webkit-app-region: no-drag;
+}
+/* 品牌行回落为普通行（chrome strip 已承担红绿灯安全区） */
+.sidebar-brand {
+  padding: 0 12px;
+  height: 32px;
+}
+
+/* 分组小灰标签（置顶 / 项目 / 最近；Codex Pinned/Projects/Recents 同款） */
+.tree-label {
+  display: block;
+  width: 100%;
+  margin: 16px 0 4px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: default;
+}
+button.tree-label {
+  cursor: pointer;
+}
+
+/* 空态 hero：rosette 标记（ink-3 单色线稿）+ 问句 28px/500（附录 B 字号豁免） */
+.hero-logo {
+  color: var(--ink-3);
+  display: flex;
+  justify-content: center;
+}
+.hero-question {
+  font-size: 28px;
+  font-weight: 500;
+}
+.hero-ws {
+  border-bottom: 1px dotted var(--ink-3);
+}
+
+/* starter 卡片：横排网格（宽窗一行四张），icon 左上 + 单行标签，无 hint */
+.starter-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.starter-card {
+  min-height: 96px;
+  justify-content: space-between;
+  gap: 12px;
+}
+.starter-label {
+  font-size: 13.5px;
+}
+
+/* composer 上下文行 = 分段条（bg-soft 顶条 + 下沿发线，项间无框） */
+.composer-context {
+  gap: 16px;
+  margin: -4px -4px 0;
+  padding: 8px 12px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  border-radius: calc(var(--radius-3) - 4px) calc(var(--radius-3) - 4px) 0 0;
+}
+.context-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.context-item.mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.context-select {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: transparent;
+  border: none;
+  max-width: 180px;
+  outline: none;
+}
+.context-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.context-btn[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+/* 动作行无边框化（Codex：权限档与模型选择为纯文字钮） */
+.composer-actions .chip-btn {
+  border-color: transparent;
+  padding: 1px 4px;
+  color: var(--ink-2);
+}
+.composer-actions .chip-btn:hover {
+  color: var(--ink);
+  border-color: transparent;
+}
+.composer-actions .composer-agent-model {
+  border-color: transparent;
+  color: var(--ink-2);
+}
+
+/* 圆形发送/停止键（ink 底 + bg 字形，token 派生零新色） */
+.send-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--bg);
+  cursor: pointer;
+  flex: none;
+}
+.send-circle:disabled {
+  /* 附录 B 审计 P2：禁用 = 空心描边圈（形态差异），不再仅降透明度——
+     深色下 0.35 透明度的填充圆仍然像可点 */
+  opacity: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-3);
+  cursor: default;
+}

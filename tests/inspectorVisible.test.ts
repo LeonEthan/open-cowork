@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * ticket #38：检查栏「终端活跃」语义——从全局锁存改为「当前上下文存在存活 pty 会话」。
- * 钉住 §1.2 自动规则新语义（终审 follow-up：用过一次终端后检查栏常驻的退化）：
- * - 终端活跃按上下文（taskId 或 'global'）判定，不跨任务泄漏；
- * - 失效路径明确：shell 退出 / pty dispose / 应用重启（瞬态不落盘）；
- * - resolveInspectorVisible 纯函数签名保持（ctx.terminalActive 布尔输入），
- *   派生逻辑（哪个 key 算活跃）由 terminalActiveFor 承担。
+ * §1.2（2026-08 修订）可见性派生测试：
+ * - 检查栏收窄为变更单栏——自动规则回归 hasTask && hasChanges，终端活跃不再拉起检查栏；
+ * - 终端迁出为底部抽屉——resolveTerminalDrawerVisible 接管 ticket #38 活性派生
+ *   （手动覆盖优先；自动 = 当前上下文存活 pty 会话，terminalActiveFor 定义不变）；
+ * - 活性失效路径不变：shell 退出 / pty dispose / 应用重启（瞬态不落盘）。
  */
 
 // vitest node 环境无 window/localStorage：zustand persist 默认经 window.localStorage 存取，
-// 需要最小桩（只为了让 persist 真实写一次，验证 liveTerminals 不落盘；不验证持久化本身）
+// 需要最小桩（只为了让 persist 真实写一次，验证瞬态字段不落盘；不验证持久化本身）
 const mem = new Map<string, string>();
 globalThis.localStorage = {
   getItem: (k: string) => mem.get(k) ?? null,
@@ -22,34 +21,43 @@ globalThis.localStorage = {
 } as Storage;
 (globalThis as { window?: unknown }).window = globalThis;
 
-const { resolveInspectorVisible, terminalActiveFor, useUiStore, TERMINAL_GLOBAL_KEY } =
-  await import('../src/renderer/src/stores/ui');
+const {
+  resolveInspectorVisible,
+  resolveTerminalDrawerVisible,
+  terminalActiveFor,
+  useUiStore,
+  TERMINAL_GLOBAL_KEY,
+} = await import('../src/renderer/src/stores/ui');
 
-describe('resolveInspectorVisible（§1.2 纯函数：覆盖优先 + 自动规则）', () => {
+describe('resolveInspectorVisible（§1.2 修订：覆盖优先 + 自动规则 hasTask && hasChanges）', () => {
   it('手动覆盖优先：open 恒可见 / hidden 恒隐藏', () => {
-    const ctx = { hasTask: false, hasChanges: false, terminalActive: false };
+    const ctx = { hasTask: false, hasChanges: false };
     expect(resolveInspectorVisible('open', ctx)).toBe(true);
-    expect(resolveInspectorVisible('hidden', { ...ctx, hasTask: true, hasChanges: true })).toBe(
-      false,
-    );
+    expect(resolveInspectorVisible('hidden', { hasTask: true, hasChanges: true })).toBe(false);
   });
 
-  it('自动规则：无任务且无终端活跃 → 不占位', () => {
-    expect(
-      resolveInspectorVisible(null, { hasTask: false, hasChanges: false, terminalActive: false }),
-    ).toBe(false);
+  it('自动规则：无任务 → 不占位', () => {
+    expect(resolveInspectorVisible(null, { hasTask: false, hasChanges: false })).toBe(false);
+  });
+
+  it('自动规则：选中任务无变更 → 不占位（终端活跃已迁抽屉，不再拉起检查栏）', () => {
+    expect(resolveInspectorVisible(null, { hasTask: true, hasChanges: false })).toBe(false);
   });
 
   it('自动规则：选中任务有变更 → 可见', () => {
-    expect(
-      resolveInspectorVisible(null, { hasTask: true, hasChanges: true, terminalActive: false }),
-    ).toBe(true);
+    expect(resolveInspectorVisible(null, { hasTask: true, hasChanges: true })).toBe(true);
+  });
+});
+
+describe('resolveTerminalDrawerVisible（§1.2 修订：抽屉 = 覆盖优先 + 上下文活跃派生）', () => {
+  it('手动覆盖优先：open 恒可见（即使无活跃会话）/ hidden 恒隐藏（即使活跃）', () => {
+    expect(resolveTerminalDrawerVisible('open', false)).toBe(true);
+    expect(resolveTerminalDrawerVisible('hidden', true)).toBe(false);
   });
 
-  it('自动规则：当前上下文终端活跃 → 可见（含无任务的 global 会话）', () => {
-    expect(
-      resolveInspectorVisible(null, { hasTask: false, hasChanges: false, terminalActive: true }),
-    ).toBe(true);
+  it('自动派生：当前上下文终端活跃 → 可见；不活跃 → 不占位', () => {
+    expect(resolveTerminalDrawerVisible(null, true)).toBe(true);
+    expect(resolveTerminalDrawerVisible(null, false)).toBe(false);
   });
 });
 
@@ -97,5 +105,36 @@ describe('ui store：liveTerminals（瞬态，不落盘）', () => {
     const persisted = JSON.parse(raw as string) as { state: Record<string, unknown> };
     expect('liveTerminals' in persisted.state).toBe(false);
     expect('terminalActivated' in persisted.state).toBe(false);
+  });
+});
+
+describe('ui store：终端抽屉状态（§1.2 修订）', () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      terminalDrawerOverride: null,
+      terminalHeight: 240,
+      activeTerminalKey: null,
+    });
+  });
+
+  it('toggleTerminalDrawer 按当前可见性写相反覆盖（仿 toggleInspector 语义）', () => {
+    const s = useUiStore.getState();
+    s.toggleTerminalDrawer(true);
+    expect(useUiStore.getState().terminalDrawerOverride).toBe('hidden');
+    s.toggleTerminalDrawer(false);
+    expect(useUiStore.getState().terminalDrawerOverride).toBe('open');
+  });
+
+  it('抽屉偏好落盘：override/height 持久化记忆，activeTerminalKey 瞬态不落盘', () => {
+    const s = useUiStore.getState();
+    s.toggleTerminalDrawer(false); // → 'open'
+    s.setTerminalHeight(320);
+    s.setActiveTerminalKey('task-a');
+    const raw = mem.get('open-cowork:ui');
+    expect(raw).toBeTruthy();
+    const persisted = JSON.parse(raw as string) as { state: Record<string, unknown> };
+    expect(persisted.state.terminalDrawerOverride).toBe('open');
+    expect(persisted.state.terminalHeight).toBe(320);
+    expect('activeTerminalKey' in persisted.state).toBe(false);
   });
 });

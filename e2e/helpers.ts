@@ -53,8 +53,8 @@ export interface ComposerTaskOpts {
   awaitModelValue?: string;
   /** 上下文行 worktree chip 切到「worktree 隔离」（git workspace 才可用） */
   worktree?: boolean;
-  /** 发送前点击权限档位 chip 的次数（三档循环：auto→full→readonly） */
-  permissionClicks?: number;
+  /** 发送前设定权限档位（附录 B 弹层：chip → radio 选项；缺省不动 = auto） */
+  permissionMode?: 'readonly' | 'auto' | 'full';
 }
 
 /**
@@ -91,8 +91,16 @@ export async function createTaskViaComposer(win: Page, opts: ComposerTaskOpts): 
     await chip.click();
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
   }
-  for (let i = 0; i < (opts.permissionClicks ?? 0); i += 1) {
+  if (opts.permissionMode) {
+    // 附录 B：chip 点击展开 radio 弹层，选定档位后弹层自闭
     await win.getByTestId('permission-mode-chip').click();
+    await win
+      .locator(`[data-testid="permission-mode-option"][data-mode="${opts.permissionMode}"]`)
+      .click();
+    await expect(win.getByTestId('permission-mode-chip')).toHaveAttribute(
+      'data-mode',
+      opts.permissionMode,
+    );
   }
   await win.getByTestId('composer-input').fill(opts.prompt);
   const send = win.getByTestId('send-button');

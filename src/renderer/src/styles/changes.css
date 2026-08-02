@@ -139,3 +139,149 @@
 .diff-line.meta {
   color: var(--ink-3);
 }
+
+/* ── ticket #39：git 操作区块（分支行 / 提交推送 / 与 base 对比） ──────────
+   宪法合规：颜色只引 token、零阴影（边框分层）、圆角走三档变量、字号 11-13px 元信息 */
+
+.git-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+}
+
+/* 分支行：分支名 chip（等宽）+ upstream 小字 */
+.git-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.git-branch-chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow-wrap: anywhere;
+}
+.git-upstream {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Commit or push 行：输入框 + 两键（icon-btn 全局样式复用） */
+.git-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.git-commit-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-ui);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 4px 8px;
+}
+.git-commit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.git-commit-input::placeholder {
+  color: var(--ink-2);
+}
+
+/* 行内错误小字（danger 语义 token） */
+.git-ops-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* Compare branch 行（仅 worktree 任务渲染） */
+.git-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.git-compare-toggle {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.git-compare-toggle:hover {
+  color: var(--ink);
+}
+.git-compare-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.git-compare-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.git-compare-summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.git-base-label {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+.git-compare-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.git-compare-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+/* 状态标签（pill；语义色 token：新增绿 / 删除红 / 改名 accent / 修改灰） */
+.git-compare-status {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.git-compare-status.added {
+  color: var(--success);
+  border-color: var(--success);
+}
+.git-compare-status.deleted {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.git-compare-status.renamed {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.git-compare-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

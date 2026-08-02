@@ -51,6 +51,8 @@ export interface Task {
   session_id: string | null;
   /** failed 态原因（迁移 003 / #19：agent 异常时记录，UI 呈现 + 重试；非 failed 为 null） */
   fail_reason: string | null;
+  /** 置顶（迁移 008 / 二期 Pinned，DESIGN.md 附录 A：0/1，默认 0；侧栏「置顶」分组数据源） */
+  pinned: number;
   created_at: number;
   updated_at: number;
 }

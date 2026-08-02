@@ -19,3 +19,12 @@ export const MODE_TITLES: Record<PermissionMode, string> = {
   auto: '权限档位：自动——命中「总是允许」规则放行，其余逐条审批',
   full: '权限档位：完全放权——一律放行，不再打扰',
 };
+
+/** Codex 对齐改造（附录 B，§4 权限弹层）：radio 行内的一句语义说明 */
+export const MODE_DESCS: Record<PermissionMode, string> = {
+  readonly: '写文件与命令执行一律自动拒绝',
+  auto: '命中「总是允许」规则放行，其余逐条审批',
+  full: '一律放行，不再打扰',
+};
+/** 弹层 radio 的固定档序（只读 → 自动 → 放权，由严到宽） */
+export const MODE_ORDER: readonly PermissionMode[] = ['readonly', 'auto', 'full'];
